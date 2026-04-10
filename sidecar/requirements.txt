@@ -1,0 +1,14 @@
+# OpenEye sidecar requirements
+# Python 3.9+
+
+# Async HTTP server
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+
+# Optional: swap keyword scoring in skills.py for real embeddings
+# sentence-transformers>=2.2.0
+# numpy>=1.24.0
+
+# Optional: swap SQLite for Postgres (multi-worker deployments)
+# asyncpg>=0.29.0
+# sqlalchemy[asyncio]>=2.0.0

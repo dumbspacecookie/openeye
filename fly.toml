@@ -1,0 +1,20 @@
+app = "openeye-sidecar"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  OPENEYE_HOME = "/data"
+  OPENEYE_PORT = "7770"
+
+[http_service]
+  internal_port = 7770
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[mounts]
+  source = "openeye_data"
+  destination = "/data"

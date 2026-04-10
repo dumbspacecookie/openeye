@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.db
+.openeye/
+*.tsbuildinfo
+coverage/
+trajectories.jsonl
+dpo_pairs.jsonl
+eval/eval-data/

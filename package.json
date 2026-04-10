@@ -1,0 +1,58 @@
+{
+  "name": "@openeye/pi-openeye",
+  "version": "0.1.0",
+  "description": "Persistent memory, visual session tracking, and RL trajectory capture for AR/XR — the shared brain for every headset",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./memory": {
+      "import": "./dist/memory.js",
+      "types": "./dist/memory.d.ts"
+    },
+    "./models": {
+      "import": "./dist/models.js",
+      "types": "./dist/models.d.ts"
+    },
+    "./tools": {
+      "import": "./dist/tools.js",
+      "types": "./dist/tools.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest --run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mariozechner/pi-agent-core": "^0.66.0",
+    "@mariozechner/pi-ai": "^0.66.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.3",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "files": [
+    "dist/",
+    "sidecar/",
+    "skills/",
+    "schemas/"
+  ],
+  "keywords": [
+    "openeye", "ai-agent", "ar", "xr", "computer-vision",
+    "procedure-verification", "rl-training", "dpo", "pi-agent"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dumbspacecookie/openeye"
+  }
+}

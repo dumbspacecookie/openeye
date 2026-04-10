@@ -1,0 +1,51 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "OpenEye Skill",
+  "description": "Schema for OpenEye community skill markdown front matter",
+  "type": "object",
+  "required": ["name", "description", "domain", "procedure_id", "tags", "version", "author"],
+  "additionalProperties": true,
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "unique kebab-case identifier",
+      "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$"
+    },
+    "description": {
+      "type": "string",
+      "description": "one sentence, max 120 characters",
+      "maxLength": 120
+    },
+    "domain": {
+      "type": "string",
+      "enum": ["medical", "manufacturing", "field-service", "general"]
+    },
+    "procedure_id": {
+      "type": "string",
+      "description": "matches a procedure id used in OpenEye"
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "version": {
+      "type": "string",
+      "description": "semantic version",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "author": {
+      "type": "string",
+      "description": "github username or handle"
+    },
+    "device_types": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "reward_threshold": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    }
+  }
+}

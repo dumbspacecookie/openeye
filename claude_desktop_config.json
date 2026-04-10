@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "openeye": {
+      "command": "python3",
+      "args": ["sidecar/mcp_server.py"],
+      "env": {
+        "ANTHROPIC_API_KEY": "sk-ant-..."
+      }
+    }
+  }
+}
