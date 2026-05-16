@@ -24,7 +24,7 @@ from typing import Any, Dict, List, Optional
 
 OPENEYE_HOME = Path(os.getenv("OPENEYE_HOME", Path.home() / ".openeye"))
 DB_PATH = OPENEYE_HOME / "openeye.db"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 3
 
 
 # ─────────────────────────────────────────────
@@ -172,7 +172,57 @@ CREATE TABLE IF NOT EXISTS trajectories (
 CREATE INDEX IF NOT EXISTS idx_traj_tenant    ON trajectories(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_traj_completed ON trajectories(completed);
 CREATE INDEX IF NOT EXISTS idx_traj_created   ON trajectories(created_at DESC);
+
+-- ── Context training-data sync state ────────────────────────────────────────
+-- Marker table tracking which trajectories have been shipped to Context.
+-- A row in here means "this trajectory has left the device for Context."
+-- No data is duplicated; the trajectory body stays in `trajectories`.
+CREATE TABLE IF NOT EXISTS context_sync_state (
+    trajectory_id TEXT PRIMARY KEY REFERENCES trajectories(id),
+    synced_at     REAL NOT NULL,
+    batch_id      TEXT NOT NULL
+);
+
+-- ── Per-tenant Context opt-in (schema v2) ───────────────────────────────────
+-- Default-deny: a tenant only contributes data to Context if it has a row
+-- here with opted_in=1, even when the global OPENEYE_CONTEXT_OPTIN flag is
+-- on. Lets a single deployment serve consenting and non-consenting tenants.
+CREATE TABLE IF NOT EXISTS tenant_context_optin (
+    tenant_id  TEXT PRIMARY KEY,
+    opted_in   INTEGER NOT NULL DEFAULT 0,
+    updated_at REAL NOT NULL,
+    note       TEXT
+);
+
+-- ── Per-procedure reward weights (schema v3) ─────────────────────────────────
+-- Default reward formula is (pass + 0.5*uncertain) / total. For some
+-- procedures you want different weights (e.g. surgical step verification
+-- should treat 'uncertain' as 0.2, not 0.5, because hedging on a sterile-
+-- field check is closer to a fail than a pass). This table holds custom
+-- weights keyed by procedure_tag.
+CREATE TABLE IF NOT EXISTS procedure_reward_config (
+    procedure_tag    TEXT PRIMARY KEY,
+    pass_weight      REAL NOT NULL DEFAULT 1.0,
+    uncertain_weight REAL NOT NULL DEFAULT 0.5,
+    fail_weight      REAL NOT NULL DEFAULT 0.0,
+    updated_at       REAL NOT NULL,
+    note             TEXT
+);
 """
+
+# Schema migrations run on existing databases. Each migration's key is the
+# version it upgrades the schema TO. CORE_SCHEMA + FTS_SCHEMA always run
+# (idempotent CREATE IF NOT EXISTS), so migrations only need to handle
+# data fixes or column adds — table creation is automatic.
+MIGRATIONS = {
+    2: [
+        # v1 → v2: new table tenant_context_optin (created by CORE_SCHEMA's
+        # CREATE IF NOT EXISTS — this entry exists to bump schema_version).
+    ],
+    3: [
+        # v2 → v3: new table procedure_reward_config (created by CORE_SCHEMA).
+    ],
+}
 
 FTS_SCHEMA = """
 CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
@@ -232,8 +282,10 @@ class OpenEyeDB:
         cursor.executescript(CORE_SCHEMA)
         cursor.execute("SELECT version FROM schema_version LIMIT 1")
         row = cursor.fetchone()
+        current_version = row["version"] if row else 0
         if row is None:
             cursor.execute("INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,))
+            current_version = SCHEMA_VERSION
         for table in ("messages_fts", "frames_fts"):
             try:
                 cursor.execute(f"SELECT * FROM {table} LIMIT 0")
@@ -241,6 +293,24 @@ class OpenEyeDB:
                 cursor.executescript(FTS_SCHEMA)
                 break
         self._conn.commit()
+        # Run any pending migrations to catch up old DBs.
+        if current_version < SCHEMA_VERSION:
+            self._run_migrations(current_version)
+
+    def _run_migrations(self, from_version: int):
+        """Apply migrations from `from_version` up to SCHEMA_VERSION. The
+        CORE_SCHEMA / FTS_SCHEMA blocks above are idempotent and already
+        ran, so new tables are present. Migrations only handle column
+        adds, data backfills, or index changes that CREATE IF NOT EXISTS
+        cannot express."""
+        with self._lock:
+            for v in range(from_version + 1, SCHEMA_VERSION + 1):
+                statements = MIGRATIONS.get(v, [])
+                for sql in statements:
+                    self._conn.execute(sql)
+                self._conn.execute(
+                    "UPDATE schema_version SET version=?", (v,))
+            self._conn.commit()
 
     def close(self):
         with self._lock:
@@ -452,6 +522,71 @@ class OpenEyeDB:
             self._conn.commit()
         return vid
 
+    def prune_older_than(self, cutoff_epoch: float) -> Dict[str, int]:
+        """Delete sessions, messages, visual_sessions, frames, step_verifications,
+        and trajectories older than the cutoff. Returns counts per table.
+
+        Skills are NOT pruned — they're procedural memory you've curated.
+        Tenant opt-in roster is NOT pruned — that's consent state.
+
+        Trajectories with a context_sync_state row are protected too —
+        deleting them would mean we 'forgot' they were shipped to Context."""
+        deleted: Dict[str, int] = {}
+        with self._lock:
+            # Trajectories first (FKs back to sessions)
+            cur = self._conn.execute(
+                """DELETE FROM trajectories
+                   WHERE created_at < ?
+                     AND id NOT IN (SELECT trajectory_id FROM context_sync_state)""",
+                (cutoff_epoch,))
+            deleted["trajectories"] = cur.rowcount
+
+            # Step verifications (FKs to visual_sessions)
+            cur = self._conn.execute(
+                "DELETE FROM step_verifications WHERE verified_at < ?",
+                (cutoff_epoch,))
+            deleted["step_verifications"] = cur.rowcount
+
+            # Frames (FKs to visual_sessions)
+            cur = self._conn.execute(
+                "DELETE FROM frames WHERE captured_at < ?",
+                (cutoff_epoch,))
+            deleted["frames"] = cur.rowcount
+
+            # Visual sessions
+            cur = self._conn.execute(
+                "DELETE FROM visual_sessions WHERE started_at < ?",
+                (cutoff_epoch,))
+            deleted["visual_sessions"] = cur.rowcount
+
+            # Messages (FKs to sessions). Also cleans the FTS index via triggers.
+            cur = self._conn.execute(
+                """DELETE FROM messages
+                   WHERE session_id IN
+                       (SELECT id FROM sessions WHERE started_at < ?)""",
+                (cutoff_epoch,))
+            deleted["messages"] = cur.rowcount
+
+            # Sessions
+            cur = self._conn.execute(
+                "DELETE FROM sessions WHERE started_at < ?",
+                (cutoff_epoch,))
+            deleted["sessions"] = cur.rowcount
+
+            self._conn.commit()
+        return deleted
+
+    def count_step_results(self, visual_session_id: str) -> Dict[str, int]:
+        """Return a dict mapping result ('pass'|'fail'|'uncertain') -> count
+        for a visual session. Empty dict if no verifications recorded."""
+        with self._lock:
+            cursor = self._conn.execute(
+                """SELECT result, COUNT(*) as n FROM step_verifications
+                   WHERE visual_session_id=? GROUP BY result""",
+                (visual_session_id,))
+            rows = cursor.fetchall()
+        return {r["result"]: r["n"] for r in rows}
+
     # ── Skills ────────────────────────────────────────────────────────────────
 
     def upsert_skill(self, name, content, description=None, domain="general", source="generated") -> str:
@@ -566,6 +701,148 @@ class OpenEyeDB:
                 f.write(json.dumps(entry, ensure_ascii=False) + "\n")
                 count += 1
         return count
+
+    # ── Per-procedure reward weights ──────────────────────────────────────────
+
+    def set_procedure_reward_weights(self, procedure_tag: str,
+                                     pass_weight: float = 1.0,
+                                     uncertain_weight: float = 0.5,
+                                     fail_weight: float = 0.0,
+                                     note: Optional[str] = None) -> Dict:
+        """Set or update reward weights for a procedure. All three weights
+        in [0, 1] is the conventional range but not enforced — you can use
+        negative weights to actively penalize failures."""
+        with self._lock:
+            self._conn.execute(
+                """INSERT INTO procedure_reward_config
+                   (procedure_tag, pass_weight, uncertain_weight, fail_weight, updated_at, note)
+                   VALUES (?,?,?,?,?,?)
+                   ON CONFLICT(procedure_tag) DO UPDATE SET
+                       pass_weight=excluded.pass_weight,
+                       uncertain_weight=excluded.uncertain_weight,
+                       fail_weight=excluded.fail_weight,
+                       updated_at=excluded.updated_at,
+                       note=excluded.note""",
+                (procedure_tag, pass_weight, uncertain_weight, fail_weight,
+                 time.time(), note))
+            self._conn.commit()
+        return {
+            "procedure_tag": procedure_tag,
+            "pass_weight": pass_weight,
+            "uncertain_weight": uncertain_weight,
+            "fail_weight": fail_weight,
+            "note": note,
+        }
+
+    def get_procedure_reward_weights(self, procedure_tag: Optional[str]) -> Dict:
+        """Returns the configured weights, or the (1.0, 0.5, 0.0) default
+        if the procedure has no custom row."""
+        if not procedure_tag:
+            return {"pass_weight": 1.0, "uncertain_weight": 0.5, "fail_weight": 0.0}
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM procedure_reward_config WHERE procedure_tag=?",
+                (procedure_tag,)).fetchone()
+        if not row:
+            return {"pass_weight": 1.0, "uncertain_weight": 0.5, "fail_weight": 0.0}
+        return dict(row)
+
+    def list_procedure_reward_configs(self) -> List[Dict]:
+        with self._lock:
+            cursor = self._conn.execute(
+                "SELECT * FROM procedure_reward_config ORDER BY procedure_tag")
+            return [dict(r) for r in cursor.fetchall()]
+
+    # ── Per-tenant Context opt-in ─────────────────────────────────────────────
+
+    def set_tenant_optin(self, tenant_id: str, opted_in: bool,
+                         note: Optional[str] = None) -> Dict:
+        """Set or update a tenant's Context opt-in choice. Idempotent."""
+        with self._lock:
+            self._conn.execute(
+                """INSERT INTO tenant_context_optin (tenant_id, opted_in, updated_at, note)
+                   VALUES (?,?,?,?)
+                   ON CONFLICT(tenant_id) DO UPDATE SET
+                       opted_in=excluded.opted_in,
+                       updated_at=excluded.updated_at,
+                       note=excluded.note""",
+                (tenant_id, 1 if opted_in else 0, time.time(), note))
+            self._conn.commit()
+        return {"tenant_id": tenant_id, "opted_in": opted_in, "note": note}
+
+    def get_tenant_optin(self, tenant_id: str) -> Optional[Dict]:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM tenant_context_optin WHERE tenant_id=?",
+                (tenant_id,)).fetchone()
+        return dict(row) if row else None
+
+    def list_tenant_optins(self) -> List[Dict]:
+        with self._lock:
+            cursor = self._conn.execute(
+                "SELECT * FROM tenant_context_optin ORDER BY tenant_id")
+            return [dict(r) for r in cursor.fetchall()]
+
+    def is_tenant_opted_in(self, tenant_id: Optional[str]) -> bool:
+        """Default-deny: a tenant must have an explicit opted_in=1 row.
+        Trajectories with no tenant_id (legacy / dev) are NOT opted in."""
+        if not tenant_id:
+            return False
+        row = self.get_tenant_optin(tenant_id)
+        return bool(row and row.get("opted_in"))
+
+    # ── Context training-data sync ────────────────────────────────────────────
+
+    def get_unsent_to_context(self, limit: int = 20, completed_only: bool = True) -> List[Dict]:
+        """Trajectories not yet shipped to Context. Joins against context_sync_state."""
+        q = """
+            SELECT t.* FROM trajectories t
+            LEFT JOIN context_sync_state c ON c.trajectory_id = t.id
+            WHERE c.trajectory_id IS NULL
+        """
+        if completed_only:
+            q += " AND t.completed = 1"
+        q += " ORDER BY t.created_at LIMIT ?"
+        with self._lock:
+            cursor = self._conn.execute(q, (limit,))
+            rows = cursor.fetchall()
+        result = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["conversations"] = json.loads(d["conversations"])
+            except (json.JSONDecodeError, TypeError):
+                d["conversations"] = []
+            try:
+                d["tags_list"] = json.loads(d["tags"]) if d.get("tags") else []
+            except (json.JSONDecodeError, TypeError):
+                d["tags_list"] = []
+            result.append(d)
+        return result
+
+    def mark_sent_to_context(self, trajectory_ids: List[str], batch_id: str) -> int:
+        """Record that the given trajectories have been shipped to Context."""
+        if not trajectory_ids:
+            return 0
+        now = time.time()
+        with self._lock:
+            self._conn.executemany(
+                """INSERT OR IGNORE INTO context_sync_state
+                   (trajectory_id, synced_at, batch_id) VALUES (?,?,?)""",
+                [(tid, now, batch_id) for tid in trajectory_ids])
+            self._conn.commit()
+        return len(trajectory_ids)
+
+    def forget_context_sync(self, trajectory_id: str) -> bool:
+        """Remove a trajectory's context-sync marker, so it's eligible to be re-sent.
+        Used for revocation: a user can request their data be re-shipped after
+        Context confirms deletion, or used to retry stuck rows."""
+        with self._lock:
+            cursor = self._conn.execute(
+                "DELETE FROM context_sync_state WHERE trajectory_id=?",
+                (trajectory_id,))
+            self._conn.commit()
+        return cursor.rowcount > 0
 
     # ── Cloud sync helpers ────────────────────────────────────────────────────
 
