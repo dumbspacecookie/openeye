@@ -5,8 +5,11 @@ Uses the HF Hub HTTP API directly — no huggingface_hub SDK required.
 """
 
 import json
-import statistics
+import logging
 import os
+import random
+import statistics
+import time
 import urllib.error
 import urllib.request
 from typing import Any, Dict, List, Optional
@@ -16,8 +19,14 @@ try:
 except ImportError:
     get_db = None
 
+logger = logging.getLogger(__name__)
+
 HF_API = "https://huggingface.co/api"
 HF_BASE = "https://huggingface.co"
+
+HF_MAX_RETRIES = int(os.getenv("OPENEYE_HF_MAX_RETRIES", "3"))
+HF_BACKOFF_BASE = float(os.getenv("OPENEYE_HF_BACKOFF_BASE", "1.0"))
+RETRYABLE_STATUS = {408, 425, 429, 500, 502, 503, 504}
 
 
 def build_dataset_card(trajectories: List[Dict], repo_id: str, tags: List[str]) -> str:
@@ -94,9 +103,9 @@ with visual session ID, reward signal, and procedure tags.
 """
 
 
-def _hf_request(method: str, url: str, token: str, body: Any = None,
-                content_type: str = "application/json") -> Dict:
-    """Make an authenticated request to the HuggingFace Hub API."""
+def _hf_request_once(method: str, url: str, token: str, body: Any = None,
+                     content_type: str = "application/json") -> Dict:
+    """One HF API attempt. Raises on HTTP errors and network errors."""
     if isinstance(body, dict) or isinstance(body, list):
         data = json.dumps(body).encode("utf-8")
     elif isinstance(body, bytes):
@@ -111,21 +120,57 @@ def _hf_request(method: str, url: str, token: str, body: Any = None,
         "Content-Type": content_type,
     }, method=method)
 
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            return json.loads(resp.read())
-    except urllib.error.HTTPError as e:
-        if e.code == 401:
-            raise PermissionError(
-                "Invalid HuggingFace token. Get one at https://huggingface.co/settings/tokens")
-        elif e.code == 403:
-            raise PermissionError(
-                "Permission denied. Check that the token has write access.")
-        else:
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        raw = resp.read()
+        if not raw:
+            return {}
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            return {"_raw": raw.decode("utf-8", errors="replace")}
+
+
+def _hf_request(method: str, url: str, token: str, body: Any = None,
+                content_type: str = "application/json",
+                max_retries: int = HF_MAX_RETRIES) -> Dict:
+    """Authenticated HF Hub request with retry on transient failures.
+
+    Terminal errors (401, 403, 404, 422) raise immediately.
+    Retryable errors (408, 429, 5xx, network) back off exponentially.
+    """
+    last_exc: Optional[Exception] = None
+    for attempt in range(max_retries + 1):
+        try:
+            return _hf_request_once(method, url, token, body, content_type)
+        except urllib.error.HTTPError as e:
+            if e.code == 401:
+                raise PermissionError(
+                    "Invalid HuggingFace token. Get one at https://huggingface.co/settings/tokens")
+            if e.code == 403:
+                raise PermissionError(
+                    "Permission denied. Check that the token has write access.")
+            if e.code in RETRYABLE_STATUS and attempt < max_retries:
+                delay = HF_BACKOFF_BASE * (2 ** attempt) + random.uniform(0, 0.5)
+                logger.info("HF %s attempt %d/%d returned %d; retrying in %.1fs",
+                            method, attempt + 1, max_retries + 1, e.code, delay)
+                time.sleep(delay)
+                last_exc = e
+                continue
             body_text = e.read().decode("utf-8", errors="replace") if e.fp else ""
             raise RuntimeError(f"HuggingFace API error {e.code}: {body_text}")
-    except (urllib.error.URLError, OSError):
-        raise ConnectionError("HuggingFace Hub unreachable. Check your connection.")
+        except (urllib.error.URLError, OSError, TimeoutError) as e:
+            if attempt < max_retries:
+                delay = HF_BACKOFF_BASE * (2 ** attempt) + random.uniform(0, 0.5)
+                logger.info("HF %s attempt %d/%d network error (%s); retrying in %.1fs",
+                            method, attempt + 1, max_retries + 1, e, delay)
+                time.sleep(delay)
+                last_exc = e
+                continue
+            raise ConnectionError("HuggingFace Hub unreachable. Check your connection.")
+
+    if last_exc:
+        raise ConnectionError(f"HuggingFace Hub unreachable after {max_retries + 1} attempts: {last_exc}")
+    raise ConnectionError("HuggingFace Hub unreachable.")
 
 
 def _load_trajectories_as_list(completed_only: bool = True) -> List[Dict]:
