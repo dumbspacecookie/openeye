@@ -15,6 +15,7 @@ import unittest
 from pathlib import Path
 
 os.environ["CONTEXT_RECEIVER_TOKENS"] = "ctx-test-key:tenant-a,ctx-other-key:tenant-b"
+os.environ["CONTEXT_RECEIVER_ADMIN_TOKEN"] = "ctx-admin-secret"
 _TMP = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
 _TMP.close()
 os.environ["CONTEXT_RECEIVER_DB"] = _TMP.name
@@ -60,6 +61,7 @@ class TestReceiverContract(unittest.TestCase):
         cls.client = TestClient(srv.app)
         cls.auth_a = {"Authorization": "Bearer ctx-test-key"}
         cls.auth_b = {"Authorization": "Bearer ctx-other-key"}
+        cls.auth_admin = {"Authorization": "Bearer ctx-admin-secret"}
 
     # ── Health ──────────────────────────────────────────────────────────────
 
@@ -225,6 +227,52 @@ class TestReceiverContract(unittest.TestCase):
                          json=make_batch("b-cross", [make_trajectory("t-cross")]))
         # Tenant B should not be able to delete tenant A's trajectory
         r = self.client.delete("/v1/openeye/trajectories/t-cross", headers=self.auth_b)
+        self.assertEqual(r.status_code, 404)
+
+    # ── Admin (operator) endpoints ──────────────────────────────────────────
+
+    def test_admin_can_get_any_tenant_trajectory(self):
+        self.client.post("/v1/openeye", headers=self.auth_a,
+                         json=make_batch("b-admin-get-a", [make_trajectory("t-admin-get-a")]))
+
+        r = self.client.get("/v1/admin/trajectories/t-admin-get-a",
+                            headers=self.auth_admin)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["trajectory_id"], "t-admin-get-a")
+
+    def test_admin_can_delete_any_tenant_trajectory(self):
+        self.client.post("/v1/openeye", headers=self.auth_b,
+                         json=make_batch("b-admin-del-b", [make_trajectory("t-admin-del-b")]))
+
+        r = self.client.delete("/v1/admin/trajectories/t-admin-del-b",
+                               headers=self.auth_admin)
+        self.assertEqual(r.status_code, 200)
+
+        # Soft-deleted: tenant B can no longer fetch it.
+        r = self.client.get("/v1/openeye/trajectories/t-admin-del-b",
+                            headers=self.auth_b)
+        self.assertEqual(r.status_code, 404)
+
+    def test_admin_endpoints_reject_tenant_tokens(self):
+        # A tenant must not be able to escalate by hitting /v1/admin/*.
+        self.client.post("/v1/openeye", headers=self.auth_a,
+                         json=make_batch("b-admin-esc", [make_trajectory("t-admin-esc")]))
+
+        r = self.client.get("/v1/admin/trajectories/t-admin-esc", headers=self.auth_a)
+        self.assertEqual(r.status_code, 401)
+
+        r = self.client.delete("/v1/admin/trajectories/t-admin-esc", headers=self.auth_a)
+        self.assertEqual(r.status_code, 401)
+
+    def test_admin_endpoints_reject_missing_auth(self):
+        r = self.client.get("/v1/admin/trajectories/anything")
+        self.assertEqual(r.status_code, 401)
+        r = self.client.delete("/v1/admin/trajectories/anything")
+        self.assertEqual(r.status_code, 401)
+
+    def test_admin_delete_unknown_returns_404(self):
+        r = self.client.delete("/v1/admin/trajectories/never-existed",
+                               headers=self.auth_admin)
         self.assertEqual(r.status_code, 404)
 
     # ── Batches ─────────────────────────────────────────────────────────────

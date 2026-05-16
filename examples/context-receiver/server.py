@@ -16,15 +16,23 @@ no production concerns wired up. Before deploying:
 
 Endpoints:
   POST   /v1/openeye                          ingest a batch (the contract)
-  GET    /v1/openeye/trajectories             list stored trajectories (admin)
-  GET    /v1/openeye/trajectories/{id}        fetch one (admin)
-  DELETE /v1/openeye/trajectories/{id}        DSAR / right-to-be-forgotten
-  GET    /v1/openeye/batches                  list received batches (admin)
+  GET    /v1/openeye/trajectories             list stored trajectories (tenant)
+  GET    /v1/openeye/trajectories/{id}        fetch one (tenant)
+  DELETE /v1/openeye/trajectories/{id}        DSAR / right-to-be-forgotten (tenant)
+  GET    /v1/openeye/batches                  list received batches (tenant)
+
+  GET    /v1/admin/trajectories/{id}          operator fetch — any tenant
+  DELETE /v1/admin/trajectories/{id}          operator DSAR — any tenant
+                                              (use to honor inbound email
+                                              deletion requests without SSH)
+
   GET    /health                              health check
 
 Run:
   pip install -r requirements.txt
   export CONTEXT_RECEIVER_TOKENS="ctx-test-key:tenant-a,ctx-prod-key:tenant-b"
+  # Optional: enables /v1/admin/* for operator-level DSAR handling.
+  export CONTEXT_RECEIVER_ADMIN_TOKEN="ctx-admin-secret"
   uvicorn server:app --port 8080
 """
 
@@ -77,21 +85,39 @@ def _load_tokens() -> Dict[str, str]:
 
 
 TOKENS = _load_tokens()
+ADMIN_TOKEN = os.getenv("CONTEXT_RECEIVER_ADMIN_TOKEN", "").strip()
 
 
-def authenticate(authorization: Optional[str]) -> str:
-    """Extracts and validates the bearer token. Returns the tenant_id.
-    Raises 401 on any failure — never leak whether token vs scheme was wrong."""
+def _extract_bearer(authorization: Optional[str]) -> str:
     if not authorization:
         raise HTTPException(401, "Missing Authorization header")
     parts = authorization.split(" ", 1)
     if len(parts) != 2 or parts[0].lower() != "bearer":
         raise HTTPException(401, "Authorization must be 'Bearer <token>'")
-    token = parts[1].strip()
+    return parts[1].strip()
+
+
+def authenticate(authorization: Optional[str]) -> str:
+    """Extracts and validates the bearer token. Returns the tenant_id.
+    Raises 401 on any failure — never leak whether token vs scheme was wrong."""
+    token = _extract_bearer(authorization)
     tenant = TOKENS.get(token)
     if not tenant:
         raise HTTPException(401, "Invalid token")
     return tenant
+
+
+def authenticate_admin(authorization: Optional[str]) -> None:
+    """Validates the operator (Context-side) admin token. Used by /v1/admin/*
+    endpoints to honor inbound DSAR email requests across tenants without
+    requiring the customer's own bearer token or SSH access to the box.
+
+    Raises 401 if not configured OR if the token doesn't match — same
+    response shape either way so an absent admin token is indistinguishable
+    from a wrong one to a probe."""
+    token = _extract_bearer(authorization)
+    if not ADMIN_TOKEN or token != ADMIN_TOKEN:
+        raise HTTPException(401, "Invalid admin token")
 
 
 # ── Storage ───────────────────────────────────────────────────────────────────
@@ -222,6 +248,34 @@ class ReceiverStore:
             self._conn.commit()
             return cur.rowcount > 0
 
+    def get_trajectory_any(self, trajectory_id: str) -> Optional[Dict]:
+        """Operator-only fetch: bypasses tenant scope. Use for honoring
+        inbound DSAR requests where the user does not know which tenant
+        owns the trajectory."""
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT * FROM trajectories WHERE trajectory_id=? AND deleted_at IS NULL",
+                (trajectory_id,))
+            row = cur.fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        try:
+            d["conversations"] = json.loads(d["conversations"])
+        except (json.JSONDecodeError, TypeError):
+            d["conversations"] = []
+        return d
+
+    def soft_delete_any(self, trajectory_id: str) -> bool:
+        """Operator-only soft-delete: bypasses tenant scope."""
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE trajectories SET deleted_at=? "
+                "WHERE trajectory_id=? AND deleted_at IS NULL",
+                (time.time(), trajectory_id))
+            self._conn.commit()
+            return cur.rowcount > 0
+
     def list_batches(self, tenant_id: str, limit: int = 100) -> List[Dict]:
         with self._lock:
             cur = self._conn.execute(
@@ -271,8 +325,9 @@ class BatchIn(BaseModel):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     store = get_store()
-    logger.info("Context receiver started — db=%s tokens=%d",
-                store.db_path, len(TOKENS))
+    logger.info("Context receiver started — db=%s tokens=%d admin=%s",
+                store.db_path, len(TOKENS),
+                "enabled" if ADMIN_TOKEN else "disabled")
     yield
     store.close()
 
@@ -385,6 +440,37 @@ async def list_batches(
 ):
     tenant_id = authenticate(authorization)
     return {"batches": get_store().list_batches(tenant_id, limit=limit)}
+
+
+# ── Operator (admin) endpoints ────────────────────────────────────────────────
+# These bypass tenant scope and require CONTEXT_RECEIVER_ADMIN_TOKEN. Use
+# when honoring an inbound DSAR email where the user knows their trajectory
+# id but not which tenant it lives under, or for any cross-tenant operator
+# action that previously required SSHing into the box.
+
+@app.get("/v1/admin/trajectories/{trajectory_id}")
+async def admin_get_trajectory(
+    trajectory_id: str,
+    authorization: Optional[str] = Header(default=None),
+):
+    authenticate_admin(authorization)
+    t = get_store().get_trajectory_any(trajectory_id)
+    if not t:
+        raise HTTPException(404, "Trajectory not found")
+    return t
+
+
+@app.delete("/v1/admin/trajectories/{trajectory_id}")
+async def admin_delete_trajectory(
+    trajectory_id: str,
+    authorization: Optional[str] = Header(default=None),
+):
+    authenticate_admin(authorization)
+    ok = get_store().soft_delete_any(trajectory_id)
+    if not ok:
+        raise HTTPException(404, "Trajectory not found or already deleted")
+    logger.info("ADMIN DSAR soft-delete: trajectory_id=%s", trajectory_id)
+    return {"ok": True, "trajectory_id": trajectory_id}
 
 
 if __name__ == "__main__":

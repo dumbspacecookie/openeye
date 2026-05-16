@@ -160,6 +160,15 @@ Soft-delete. Right-to-be-forgotten endpoint. Idempotent.
 ### `GET /v1/openeye/batches?limit=...`
 Audit trail of received batches.
 
+### `GET /v1/admin/trajectories/{trajectory_id}`
+**Operator only.** Fetches a trajectory across all tenants. Requires
+`CONTEXT_RECEIVER_ADMIN_TOKEN`. Returns 401 if the env var is unset.
+
+### `DELETE /v1/admin/trajectories/{trajectory_id}`
+**Operator only.** Soft-deletes a trajectory across all tenants. Use
+when honoring inbound DSAR email requests where you don't know which
+tenant owns the row.
+
 ### `GET /health`
 Liveness probe.
 

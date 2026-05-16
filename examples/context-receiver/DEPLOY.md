@@ -38,6 +38,12 @@ fly volumes create receiver_data --size 1 --region iad
 # Production: rotate quarterly; one token per customer
 fly secrets set CONTEXT_RECEIVER_TOKENS="ctx-acme-2026q1:acme-corp,ctx-pilot-2026q1:pilot-user"
 
+# Step 3b (optional, recommended): operator/admin token for cross-tenant
+# DSAR handling. Lets you delete inbound trajectories via the /v1/admin/*
+# endpoints without having to SSH in and run SQL. Keep this separate from
+# tenant tokens — it bypasses tenant scope.
+fly secrets set CONTEXT_RECEIVER_ADMIN_TOKEN="$(openssl rand -hex 32)"
+
 # Step 4: deploy
 fly deploy
 ```
@@ -188,8 +194,10 @@ periods — production should add that.
 
 ### Right-to-be-forgotten
 
-OpenEye supports DSAR via the `DELETE /v1/openeye/trajectories/{id}`
-endpoint. To process a request:
+Two paths depending on who's asking.
+
+**Customer-initiated (tenant scope).** The customer already knows their
+trajectory ID and has their own bearer token:
 
 ```bash
 TRAJ=abc-123-uuid
@@ -197,8 +205,24 @@ curl -X DELETE https://context-receiver-yourname.fly.dev/v1/openeye/trajectories
   -H "Authorization: Bearer ctx-acme-2026q1"
 ```
 
-Then tell the customer to reset the OpenEye-side sync marker so the row
-doesn't reappear:
+**Operator-initiated (inbound email request).** An end user emailed
+support@ asking for deletion. You don't know which tenant owns the row.
+Use the admin endpoint with your `CONTEXT_RECEIVER_ADMIN_TOKEN`:
+
+```bash
+TRAJ=abc-123-uuid
+
+# Verify it exists across all tenants first
+curl https://context-receiver-yourname.fly.dev/v1/admin/trajectories/$TRAJ \
+  -H "Authorization: Bearer $CONTEXT_RECEIVER_ADMIN_TOKEN"
+
+# Then soft-delete
+curl -X DELETE https://context-receiver-yourname.fly.dev/v1/admin/trajectories/$TRAJ \
+  -H "Authorization: Bearer $CONTEXT_RECEIVER_ADMIN_TOKEN"
+```
+
+In either case, after deletion tell the customer to reset the OpenEye-side
+sync marker so the row doesn't get re-sent on the next sync cycle:
 ```bash
 curl -X POST http://127.0.0.1:7770/context/forget/$TRAJ
 ```
