@@ -26,6 +26,18 @@ fly.toml
 Dockerfile
 .github/
 
+# Internal planning + agent docs (never publish)
+.planning/
+.claude/
+
+# Reference SDKs + benchmark + community library — separate distribution
+sdk/
+benchmark/
+community-skills/
+
+# TypeScript incremental build state
+*.tsbuildinfo
+
 # Local artifacts
 node_modules/
 *.db
@@ -35,9 +47,10 @@ node_modules/
 *.log
 .openeye/
 
-# Python bytecode
+# Python bytecode (matches at any depth)
 __pycache__/
 *.pyc
+*.pyo
 .pytest_cache/
 
 # OS clutter
