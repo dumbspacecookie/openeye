@@ -123,13 +123,12 @@ curl http://localhost:8080/v1/openeye/trajectories \
   -H "Authorization: Bearer ctx-test-key"
 ```
 
-You should see your trajectory with `tenant_id="dev-tenant"` (derived
-from your auth token, not the request body), the procedure_tag, the
-reward signal, and the conversation. Notably absent: user_id,
-system_prompt, and visual_session_id. The sidecar's `_clean_for_context`
-allow-list only ships a fixed set of fields, so internal identifiers
-never make it into the outgoing payload — there is nothing to "strip"
-because nothing was added. That's the PII boundary working.
+You should see the trajectory with `tenant_id="dev-tenant"` (derived
+from your auth token, not the body), the procedure_tag, the reward
+signal, and the conversation. Notably absent: user_id, system_prompt,
+visual_session_id. `_clean_for_context` builds the outgoing payload
+from a fixed allow-list — internal ids aren't "stripped," they're just
+never added. PII boundary working as intended.
 
 ## API surface
 
@@ -164,13 +163,12 @@ Soft-delete. Right-to-be-forgotten endpoint. Idempotent.
 Audit trail of received batches.
 
 ### `GET /v1/admin/trajectories/{trajectory_id}`
-**Operator only.** Fetches a trajectory across all tenants. Requires
-`CONTEXT_RECEIVER_ADMIN_TOKEN`. Returns 401 if the env var is unset.
+**Operator only.** Cross-tenant fetch. Needs `CONTEXT_RECEIVER_ADMIN_TOKEN`.
+401 if the env var is unset (or wrong — indistinguishable, on purpose).
 
 ### `DELETE /v1/admin/trajectories/{trajectory_id}`
-**Operator only.** Soft-deletes a trajectory across all tenants. Use
-when honoring inbound DSAR email requests where you don't know which
-tenant owns the row.
+**Operator only.** Cross-tenant soft-delete. For when someone emails
+support@ asking to be forgotten and you don't know which tenant they're in.
 
 ### `GET /health`
 Liveness probe.

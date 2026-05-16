@@ -38,10 +38,8 @@ fly volumes create receiver_data --size 1 --region iad
 # Production: rotate quarterly; one token per customer
 fly secrets set CONTEXT_RECEIVER_TOKENS="ctx-acme-2026q1:acme-corp,ctx-pilot-2026q1:pilot-user"
 
-# Step 3b (optional, recommended): operator/admin token for cross-tenant
-# DSAR handling. Lets you delete inbound trajectories via the /v1/admin/*
-# endpoints without having to SSH in and run SQL. Keep this separate from
-# tenant tokens — it bypasses tenant scope.
+# Step 3b: operator/admin token for cross-tenant DSAR via /v1/admin/*.
+# Keep it separate from tenant tokens — it bypasses tenant scope.
 fly secrets set CONTEXT_RECEIVER_ADMIN_TOKEN="$(openssl rand -hex 32)"
 
 # Step 4: deploy

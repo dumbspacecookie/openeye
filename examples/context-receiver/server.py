@@ -108,13 +108,9 @@ def authenticate(authorization: Optional[str]) -> str:
 
 
 def authenticate_admin(authorization: Optional[str]) -> None:
-    """Validates the operator (Context-side) admin token. Used by /v1/admin/*
-    endpoints to honor inbound DSAR email requests across tenants without
-    requiring the customer's own bearer token or SSH access to the box.
-
-    Raises 401 if not configured OR if the token doesn't match — same
-    response shape either way so an absent admin token is indistinguishable
-    from a wrong one to a probe."""
+    """Operator-side token for /v1/admin/*. Lets me delete a trajectory
+    when someone emails support@ without ssh'ing into the box. 401 whether
+    the token is wrong or just not configured — probes can't tell."""
     token = _extract_bearer(authorization)
     if not ADMIN_TOKEN or token != ADMIN_TOKEN:
         raise HTTPException(401, "Invalid admin token")
@@ -249,9 +245,8 @@ class ReceiverStore:
             return cur.rowcount > 0
 
     def get_trajectory_any(self, trajectory_id: str) -> Optional[Dict]:
-        """Operator-only fetch: bypasses tenant scope. Use for honoring
-        inbound DSAR requests where the user does not know which tenant
-        owns the trajectory."""
+        """Operator fetch — bypasses tenant scope. For inbound DSAR
+        requests when the user doesn't know which tenant owns the row."""
         with self._lock:
             cur = self._conn.execute(
                 "SELECT * FROM trajectories WHERE trajectory_id=? AND deleted_at IS NULL",
@@ -267,7 +262,7 @@ class ReceiverStore:
         return d
 
     def soft_delete_any(self, trajectory_id: str) -> bool:
-        """Operator-only soft-delete: bypasses tenant scope."""
+        """Operator soft-delete — bypasses tenant scope."""
         with self._lock:
             cur = self._conn.execute(
                 "UPDATE trajectories SET deleted_at=? "
@@ -325,7 +320,7 @@ class BatchIn(BaseModel):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     store = get_store()
-    logger.info("Context receiver started — db=%s tokens=%d admin=%s",
+    logger.info("don't panic — receiver up. db=%s tokens=%d admin=%s",
                 store.db_path, len(TOKENS),
                 "enabled" if ADMIN_TOKEN else "disabled")
     yield
@@ -370,10 +365,8 @@ async def ingest(
         raise HTTPException(400, "X-OpenEye-Batch-Id header does not match body batch_id")
     batch_id = x_openeye_batch_id or batch.batch_id
 
-    # Validate body schema_version and (if present) the X-OpenEye-Schema header.
-    # Both must match SUPPORTED_SCHEMA — otherwise a future sidecar version
-    # whose body claims "1.0" but whose header advertises "2.0" would be
-    # silently accepted, masking a real client/server contract mismatch.
+    # Body AND header must match. A future sidecar bumping the header before
+    # the body would otherwise slip through and corrupt parsing downstream.
     if batch.schema_version != SUPPORTED_SCHEMA:
         raise HTTPException(400, f"Unsupported schema {batch.schema_version}; expected {SUPPORTED_SCHEMA}")
     if x_openeye_schema and x_openeye_schema != SUPPORTED_SCHEMA:
@@ -442,11 +435,9 @@ async def list_batches(
     return {"batches": get_store().list_batches(tenant_id, limit=limit)}
 
 
-# ── Operator (admin) endpoints ────────────────────────────────────────────────
-# These bypass tenant scope and require CONTEXT_RECEIVER_ADMIN_TOKEN. Use
-# when honoring an inbound DSAR email where the user knows their trajectory
-# id but not which tenant it lives under, or for any cross-tenant operator
-# action that previously required SSHing into the box.
+# ── Admin / operator endpoints ────────────────────────────────────────────────
+# Cross-tenant. Requires CONTEXT_RECEIVER_ADMIN_TOKEN. For honoring inbound
+# DSAR emails without SSH gymnastics. Don't expose this token to customers.
 
 @app.get("/v1/admin/trajectories/{trajectory_id}")
 async def admin_get_trajectory(

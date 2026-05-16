@@ -8,10 +8,8 @@
 #   4. fly secrets set CONTEXT_RECEIVER_TOKENS="ctx-prod-key:tenant-a"
 #   5. fly deploy
 
-# IMPORTANT: replace this app name before `fly deploy`. The plain
-# "context-receiver" is almost certainly squatted on Fly. The quickstart
-# above uses `fly launch --copy-config --name <yours>` which overwrites
-# this value, but running `fly deploy` directly will fail without it.
+# pick a name. "context-receiver" is squatted. quickstart above will
+# overwrite this via --name, raw `fly deploy` won't.
 app = "REPLACE-ME-context-receiver"
 primary_region = "iad"   # Ashburn — closest to most US/EU traffic
 

@@ -137,9 +137,7 @@ class TestReceiverContract(unittest.TestCase):
         self.assertEqual(r.status_code, 400)
 
     def test_schema_header_mismatch_rejected(self):
-        # Body schema matches, but the X-OpenEye-Schema header advertises
-        # a different version — must reject. Catches a future-sidecar
-        # contract drift where the header gets bumped before the body.
+        # body ok but header advertises a different version — reject anyway
         r = self.client.post(
             "/v1/openeye",
             headers={**self.auth_a, "X-OpenEye-Schema": "2.0"},
@@ -199,9 +197,7 @@ class TestReceiverContract(unittest.TestCase):
         self.assertEqual(r.status_code, 404)
 
     def test_soft_deleted_not_in_list(self):
-        # The single-fetch path was tested above; this asserts the list
-        # endpoint also respects deleted_at IS NULL so DSAR'd rows
-        # disappear from operator/tenant browsing too.
+        # the list endpoint also needs to respect deleted_at IS NULL
         self.client.post("/v1/openeye", headers=self.auth_a,
                          json=make_batch("b-list-del",
                                          [make_trajectory("t-list-del-keep", proc="proc-keep"),
@@ -248,13 +244,13 @@ class TestReceiverContract(unittest.TestCase):
                                headers=self.auth_admin)
         self.assertEqual(r.status_code, 200)
 
-        # Soft-deleted: tenant B can no longer fetch it.
+        # tenant B can no longer see it
         r = self.client.get("/v1/openeye/trajectories/t-admin-del-b",
                             headers=self.auth_b)
         self.assertEqual(r.status_code, 404)
 
     def test_admin_endpoints_reject_tenant_tokens(self):
-        # A tenant must not be able to escalate by hitting /v1/admin/*.
+        # no escalation from tenant key → admin scope
         self.client.post("/v1/openeye", headers=self.auth_a,
                          json=make_batch("b-admin-esc", [make_trajectory("t-admin-esc")]))
 
