@@ -42,22 +42,26 @@ def messages_to_sharegpt(messages, system_prompt=None) -> List[Dict]:
     return result
 
 
-def compute_visual_reward(visual_session_id: str) -> Optional[float]:
+def compute_visual_reward(visual_session_id: str,
+                          procedure_tag: Optional[str] = None) -> Optional[float]:
+    """Compute the reward signal for a visual session.
+
+    Default formula: (1.0 × passes + 0.5 × uncertain + 0.0 × fails) / total.
+    Override per-procedure via OpenEyeDB.set_procedure_reward_weights().
+    Custom weights matter when a procedure's risk profile makes "uncertain"
+    closer to fail than pass (e.g. sterile-field checks)."""
     db = get_db()
-    with db._lock:
-        cursor = db._conn.execute(
-            """SELECT result, COUNT(*) as n FROM step_verifications
-               WHERE visual_session_id=? GROUP BY result""",
-            (visual_session_id,))
-        rows = cursor.fetchall()
-    if not rows:
+    counts = db.count_step_results(visual_session_id)
+    if not counts:
         return None
-    counts = {r["result"]: r["n"] for r in rows}
+    weights = db.get_procedure_reward_weights(procedure_tag)
     total = sum(counts.values())
-    passes = counts.get("pass", 0)
-    uncertain = counts.get("uncertain", 0)
-    reward = (passes + 0.5 * uncertain) / total
-    return round(reward, 4)
+    weighted = (
+        weights["pass_weight"] * counts.get("pass", 0)
+        + weights["uncertain_weight"] * counts.get("uncertain", 0)
+        + weights["fail_weight"] * counts.get("fail", 0)
+    )
+    return round(weighted / total, 4)
 
 
 def capture_trajectory(session_id, completed, model, system_prompt=None,
@@ -72,7 +76,13 @@ def capture_trajectory(session_id, completed, model, system_prompt=None,
         return None
     reward = None
     if visual_session_id:
-        reward = compute_visual_reward(visual_session_id)
+        # First non-meta tag is the procedure tag — same heuristic as DPO export
+        procedure_tag = None
+        for t in (tags or []):
+            if t and t not in ("openeye", "completed", "abandoned", "error"):
+                procedure_tag = t
+                break
+        reward = compute_visual_reward(visual_session_id, procedure_tag)
     trajectory_id = db.save_trajectory(
         conversations=conversations, model=model, completed=completed,
         session_id=session_id, visual_session_id=visual_session_id,

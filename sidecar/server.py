@@ -14,11 +14,14 @@ import json
 import logging
 import os
 import sys
+import time
+import uuid
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional
 
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -29,24 +32,185 @@ from skills import write_skill, get_skill, list_skills, recall_relevant_skills, 
 from trajectories import capture_trajectory, export_for_training
 from cloud_sync import start_sync_worker, stop_sync_worker, sync_once
 from dpo_export import export_dpo_pairs
+import context_sync
+import retention
+from event_bus import get_bus, format_sse
+from fastapi.responses import StreamingResponse
+import asyncio
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [openeye] %(levelname)s %(message)s")
+logging.basicConfig(
+    level=os.getenv("OPENEYE_LOG_LEVEL", "INFO").upper(),
+    format='%(asctime)s [openeye] %(levelname)s %(name)s %(message)s')
 logger = logging.getLogger(__name__)
 
 PORT = int(os.getenv("OPENEYE_PORT", "7770"))
+HOST = os.getenv("OPENEYE_BIND_HOST", "127.0.0.1")
+SIDECAR_TOKEN = os.getenv("OPENEYE_SIDECAR_TOKEN", "")
+
+# Paths exempt from auth even when SIDECAR_TOKEN is set — needed so health
+# probes (from the TS spawner) and the openapi spec don't fail.
+UNAUTHENTICATED_PATHS = {"/health", "/openapi.json", "/docs", "/redoc"}
+
+
+def _print_context_banner():
+    """Print the loud opt-in banner to stderr on sidecar boot.
+    Surfaces the four states clearly:
+      - undecided: full banner with enable instructions
+      - opt-in pending consent: prompt to record attestation
+      - fully enabled: one-line confirmation
+      - explicit opt-out: silent
+    """
+    raw = os.getenv("OPENEYE_CONTEXT_OPTIN", "")
+    optin = raw.strip().lower() in ("true", "1", "yes", "on")
+    optout = raw.strip().lower() in ("false", "0", "no", "off")
+
+    if optin:
+        if not context_sync.CONTEXT_KEY:
+            sys.stderr.write(
+                "[openeye] OPENEYE_CONTEXT_OPTIN=true but "
+                "OPENEYE_CONTEXT_API_KEY is unset — Context sharing disabled.\n")
+            return
+        if not context_sync.has_consent_attestation():
+            sys.stderr.write(
+                "\n"
+                "  ┌─ Context sharing: AWAITING CONSENT ATTESTATION ─────────────────┐\n"
+                "  │ OPENEYE_CONTEXT_OPTIN=true and key set, but you haven't yet     │\n"
+                "  │ affirmed that you have consent from people in frame to share    │\n"
+                "  │ their procedure data with Context.                              │\n"
+                "  │                                                                 │\n"
+                "  │ To attest:                                                      │\n"
+                "  │   curl -X POST http://127.0.0.1:7770/context/consent \\          │\n"
+                "  │        -H 'Content-Type: application/json' \\                   │\n"
+                "  │        -d '{\"confirm\": true, \"note\": \"signed DPA YYYY-MM-DD\"}'  │\n"
+                "  │                                                                 │\n"
+                "  │ Or for CI: export OPENEYE_CONTEXT_CONSENT_CONFIRMED=true        │\n"
+                "  └─────────────────────────────────────────────────────────────────┘\n"
+                "\n")
+            return
+        sys.stderr.write(
+            "[openeye] Context data sharing: ON. Per-tenant opt-in required "
+            "for each contributing tenant — see docs/context-data.md.\n")
+        return
+    if optout:
+        return
+    # Undecided
+    sys.stderr.write(
+        "\n"
+        "  ┌─ OpenEye is built by Context ───────────────────────────────────┐\n"
+        "  │ Help us train better procedure-verification models. Opt in to   │\n"
+        "  │ share completed trajectories + reward signals (no tenant IDs,   │\n"
+        "  │ no user IDs, no system prompts — see docs/context-data.md).     │\n"
+        "  │                                                                 │\n"
+        "  │   1. export OPENEYE_CONTEXT_OPTIN=true                          │\n"
+        "  │   2. export OPENEYE_CONTEXT_API_KEY=ctx-...                     │\n"
+        "  │   3. Attest consent: POST /context/consent                      │\n"
+        "  │   4. Opt-in each tenant:  POST /context/tenants/optin           │\n"
+        "  │                                                                 │\n"
+        "  │   To silence: export OPENEYE_CONTEXT_OPTIN=false                │\n"
+        "  └─────────────────────────────────────────────────────────────────┘\n"
+        "\n")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db = get_db()
     logger.info("OpenEye sidecar starting (db: %s, port: %d)", db.db_path, PORT)
+    _print_context_banner()
     start_sync_worker()
+    context_sync.start_context_worker()
+    retention.start_retention_worker()
     yield
+    retention.stop_retention_worker()
+    context_sync.stop_context_worker()
     stop_sync_worker()
     logger.info("OpenEye sidecar stopped")
 
 
 app = FastAPI(title="OpenEye Sidecar", version="1.0.0", lifespan=lifespan)
+
+
+# ── Middleware + error handlers ────────────────────────────────────────────
+
+@app.middleware("http")
+async def sidecar_auth(request: Request, call_next):
+    """Optional shared-secret auth. When OPENEYE_SIDECAR_TOKEN is set, all
+    requests except /health (needed by the TS spawner) must carry a
+    matching Authorization: Bearer <token> header. When the env var is
+    unset (default), the sidecar accepts unauthenticated requests — fine
+    for the standard localhost-only deployment."""
+    if not SIDECAR_TOKEN:
+        return await call_next(request)
+    if request.url.path in UNAUTHENTICATED_PATHS:
+        return await call_next(request)
+    auth = request.headers.get("authorization", "")
+    if not auth.lower().startswith("bearer ") or auth[7:].strip() != SIDECAR_TOKEN:
+        return JSONResponse(
+            status_code=401,
+            content={"error": "unauthorized",
+                     "detail": "Missing or invalid sidecar token"})
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def request_logging(request: Request, call_next):
+    request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
+    start = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        elapsed_ms = int((time.perf_counter() - start) * 1000)
+        logger.exception(
+            "request_failed id=%s method=%s path=%s elapsed_ms=%d error=%s",
+            request_id, request.method, request.url.path, elapsed_ms, exc)
+        return JSONResponse(
+            status_code=500,
+            content={"error": "internal_error", "request_id": request_id,
+                     "detail": "An unexpected error occurred."},
+            headers={"x-request-id": request_id})
+    elapsed_ms = int((time.perf_counter() - start) * 1000)
+    response.headers["x-request-id"] = request_id
+    logger.info("request id=%s method=%s path=%s status=%d elapsed_ms=%d",
+                request_id, request.method, request.url.path,
+                response.status_code, elapsed_ms)
+    return response
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    request_id = request.headers.get("x-request-id") or ""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": _error_code(exc.status_code), "detail": exc.detail,
+                 "request_id": request_id},
+        headers={"x-request-id": request_id} if request_id else {})
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    request_id = request.headers.get("x-request-id") or ""
+    return JSONResponse(
+        status_code=422,
+        content={"error": "validation_error", "detail": exc.errors(),
+                 "request_id": request_id},
+        headers={"x-request-id": request_id} if request_id else {})
+
+
+@app.exception_handler(ValueError)
+async def value_error_handler(request: Request, exc: ValueError):
+    request_id = request.headers.get("x-request-id") or ""
+    return JSONResponse(
+        status_code=400,
+        content={"error": "bad_request", "detail": str(exc),
+                 "request_id": request_id},
+        headers={"x-request-id": request_id} if request_id else {})
+
+
+def _error_code(status: int) -> str:
+    return {
+        400: "bad_request", 401: "unauthorized", 403: "forbidden",
+        404: "not_found", 409: "conflict", 422: "validation_error",
+        429: "rate_limited", 500: "internal_error", 503: "service_unavailable",
+    }.get(status, "error")
 
 
 # ── Request models ─────────────────────────────────────────────────────────
@@ -175,7 +339,40 @@ async def session_create(body: SessionCreate):
 @app.post("/sessions/{session_id}/end")
 async def session_end(session_id: str, body: SessionEnd):
     get_db().end_session(session_id, reason=body.reason)
+    get_bus().publish(session_id, "session_ended", {"reason": body.reason})
     return {"ok": True}
+
+
+@app.get("/sessions/{session_id}/events")
+async def session_events(session_id: str):
+    """Server-Sent Events stream for a session. Pass session_id='*' to
+    subscribe to all sessions. Use for real-time AR overlay verdicts."""
+    bus = get_bus()
+
+    async def event_generator():
+        q = await bus.subscribe(session_id)
+        # Initial hello frame so the client knows the stream is alive
+        yield format_sse({
+            "type": "subscribed",
+            "session_id": session_id,
+            "ts": __import__("time").time(),
+            "data": {},
+        })
+        try:
+            while True:
+                try:
+                    event = await asyncio.wait_for(q.get(), timeout=15.0)
+                    yield format_sse(event)
+                except asyncio.TimeoutError:
+                    # Heartbeat — proxies and load balancers will close
+                    # idle streams without this.
+                    yield ": heartbeat\n\n"
+        finally:
+            await bus.unsubscribe(session_id, q)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache",
+                                      "X-Accel-Buffering": "no"})
 
 @app.post("/sessions/{session_id}/messages")
 async def message_append(session_id: str, body: MessageAppend):
@@ -241,6 +438,16 @@ async def frame_log(body: FrameLog):
         width=body.width, height=body.height, objects_detected=body.objects_detected,
         step_context=body.step_context, embedding_ref=body.embedding_ref,
         confidence=body.confidence, mark_sync=body.cloud_sync)
+    vs = get_db().get_visual_session(body.visual_session_id)
+    session_id = vs.get("session_id") if vs else None
+    get_bus().publish(session_id, "frame_logged", {
+        "frame_id": fid,
+        "visual_session_id": body.visual_session_id,
+        "sequence_num": body.sequence_num,
+        "scene_description": body.scene_description[:200],  # truncate for SSE bandwidth
+        "step_context": body.step_context,
+        "confidence": body.confidence,
+    })
     return {"frame_id": fid}
 
 
@@ -255,6 +462,20 @@ async def step_log(body: StepVerificationLog):
         confidence=body.confidence, reasoning=body.reasoning,
         model_used=body.model_used, latency_ms=body.latency_ms,
         tenant_id=body.tenant_id, mark_sync=body.cloud_sync)
+    # Look up which session (text agent) this visual session belongs to so
+    # we can route the event to the right SSE stream.
+    vs = get_db().get_visual_session(body.visual_session_id)
+    session_id = vs.get("session_id") if vs else None
+    get_bus().publish(session_id, "step_verified", {
+        "verification_id": vid,
+        "visual_session_id": body.visual_session_id,
+        "step_id": body.step_id,
+        "step_name": body.step_name,
+        "result": body.result,
+        "confidence": body.confidence,
+        "reasoning": body.reasoning,
+        "frame_id": body.frame_id,
+    })
     return {"verification_id": vid}
 
 
@@ -313,5 +534,140 @@ async def sync_now():
     return {"synced": sync_once()}
 
 
+# Data retention
+@app.get("/retention/status")
+async def retention_status():
+    return {
+        "enabled": retention.is_enabled(),
+        "retain_days": retention.RETAIN_DAYS,
+        "interval_seconds": retention.RUN_INTERVAL_SECONDS,
+    }
+
+@app.post("/retention/prune-now")
+async def retention_prune_now():
+    return retention.prune_now()
+
+
+# Per-procedure reward calibration
+class RewardConfig(BaseModel):
+    procedure_tag: str
+    pass_weight: float = 1.0
+    uncertain_weight: float = 0.5
+    fail_weight: float = 0.0
+    note: Optional[str] = None
+
+@app.post("/procedures/reward-config")
+async def set_procedure_reward(body: RewardConfig):
+    """Configure custom reward weights for a procedure. The reward formula
+    becomes (pass_weight*P + uncertain_weight*U + fail_weight*F) / total."""
+    return get_db().set_procedure_reward_weights(
+        procedure_tag=body.procedure_tag,
+        pass_weight=body.pass_weight,
+        uncertain_weight=body.uncertain_weight,
+        fail_weight=body.fail_weight,
+        note=body.note)
+
+@app.get("/procedures/reward-config")
+async def list_procedure_rewards():
+    return {"procedures": get_db().list_procedure_reward_configs()}
+
+@app.get("/procedures/reward-config/{procedure_tag}")
+async def get_procedure_reward(procedure_tag: str):
+    return get_db().get_procedure_reward_weights(procedure_tag)
+
+
+# Context training-data sync (loud opt-in)
+@app.get("/context/status")
+async def context_status():
+    """Reports the current Context-sharing state. Safe to call without opt-in."""
+    optin_truthy = context_sync.CONTEXT_OPTIN
+    key_set = bool(context_sync.CONTEXT_KEY)
+    consent = context_sync.has_consent_attestation()
+    enabled = context_sync.is_enabled()
+
+    blocker = None
+    if not optin_truthy:
+        blocker = "OPENEYE_CONTEXT_OPTIN is not true"
+    elif not key_set:
+        blocker = "OPENEYE_CONTEXT_API_KEY is not set"
+    elif not consent:
+        blocker = "Consent attestation not recorded — POST /context/consent or set OPENEYE_CONTEXT_CONSENT_CONFIRMED=true"
+
+    return {
+        "enabled": enabled,
+        "blocker": blocker,
+        "optin_env_set": optin_truthy,
+        "api_key_set": key_set,
+        "consent_attested": consent,
+        "consent_marker_path": context_sync.CONSENT_MARKER,
+        "endpoint": context_sync.CONTEXT_URL if enabled else None,
+        "interval_seconds": context_sync.SYNC_INTERVAL,
+        "schema_version": context_sync.SCHEMA_VERSION,
+        "failure_state": context_sync.get_failure_state(),
+    }
+
+
+class ConsentAttestation(BaseModel):
+    confirm: bool
+    note: Optional[str] = None
+
+@app.post("/context/consent")
+async def context_consent(body: ConsentAttestation):
+    """Record (or revoke) the developer's consent attestation.
+
+    By POSTing confirm=true the developer affirms they have consent from
+    people captured in procedure footage to share derived trajectory data
+    with Context. The attestation is persisted to OPENEYE_HOME/.context-consent
+    so it survives sidecar restarts."""
+    if body.confirm:
+        path = context_sync.record_consent_attestation(note=body.note)
+        return {"ok": True, "attested": True, "marker": path}
+    revoked = context_sync.revoke_consent_attestation()
+    return {"ok": True, "attested": False, "revoked": revoked}
+
+@app.post("/context/sync-now")
+async def context_sync_now():
+    """Trigger one Context sync pass immediately. No-op if opt-in is off."""
+    return context_sync.sync_once()
+
+@app.post("/context/forget/{trajectory_id}")
+async def context_forget(trajectory_id: str):
+    """Reset a trajectory's Context-sync marker so it's eligible to be re-sent.
+    Use when Context confirms deletion or when a row got stuck."""
+    ok = get_db().forget_context_sync(trajectory_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="No Context-sync record for that trajectory")
+    return {"ok": True, "trajectory_id": trajectory_id}
+
+
+# Per-tenant Context opt-in (default deny — only opted-in tenants contribute)
+class TenantOptin(BaseModel):
+    tenant_id: str
+    opted_in: bool
+    note: Optional[str] = None
+
+@app.post("/context/tenants/optin")
+async def context_tenant_optin(body: TenantOptin):
+    """Opt a tenant in or out of Context data sharing. Default is OFF for
+    every tenant — they must explicitly be opted in here, even when the
+    global OPENEYE_CONTEXT_OPTIN flag is true."""
+    return get_db().set_tenant_optin(body.tenant_id, body.opted_in, note=body.note)
+
+@app.get("/context/tenants")
+async def context_list_tenant_optins():
+    return {"tenants": get_db().list_tenant_optins()}
+
+@app.get("/context/tenants/{tenant_id}")
+async def context_get_tenant_optin(tenant_id: str):
+    row = get_db().get_tenant_optin(tenant_id)
+    return row or {"tenant_id": tenant_id, "opted_in": False, "note": None}
+
+
 if __name__ == "__main__":
-    uvicorn.run("server:app", host="127.0.0.1", port=PORT, log_level="info", workers=1)
+    workers = int(os.getenv("OPENEYE_WORKERS", "1"))
+    if workers != 1:
+        logger.warning(
+            "OPENEYE_WORKERS=%d but SQLite uses a single-process write lock. "
+            "Run with 1 worker unless you've migrated to a multi-process backing store.",
+            workers)
+    uvicorn.run("server:app", host=HOST, port=PORT, log_level="info", workers=workers)
