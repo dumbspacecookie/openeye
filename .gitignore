@@ -7,3 +7,22 @@ coverage/
 trajectories.jsonl
 dpo_pairs.jsonl
 eval/eval-data/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Secrets / local state
+.env
+.env.local
+.context-consent
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
