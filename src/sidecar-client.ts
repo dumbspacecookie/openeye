@@ -22,11 +22,22 @@ export interface SidecarClientOptions {
   python?: string;
   /** Milliseconds to wait for sidecar to boot. Default 8000. */
   bootTimeout?: number;
+  /** Per-request HTTP timeout in ms. Default 15000. Prevents a hung sidecar from stalling the agent. */
+  requestTimeout?: number;
+  /**
+   * Optional shared secret. When set, propagated to the spawned sidecar via
+   * OPENEYE_SIDECAR_TOKEN and sent as `Authorization: Bearer <token>` on
+   * every request. Default falls back to OPENEYE_SIDECAR_TOKEN env. Leave
+   * unset for the standard localhost-only deployment.
+   */
+  sidecarToken?: string;
 }
 
 export type VerifyResult = "pass" | "fail" | "uncertain";
 
 const DEFAULT_PORT = 7770;
+const DEFAULT_REQUEST_TIMEOUT_MS = 15000;
+const HEALTH_PROBE_TIMEOUT_MS = 1500;
 
 // ── HTTP helpers ──────────────────────────────────────────────────────────────
 
@@ -34,7 +45,9 @@ async function httpRequest(
   port: number,
   method: "GET" | "POST",
   endpoint: string,
-  body?: unknown
+  body?: unknown,
+  timeoutMs: number = DEFAULT_REQUEST_TIMEOUT_MS,
+  token?: string,
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const payload = body !== undefined ? JSON.stringify(body) : undefined;
@@ -46,6 +59,7 @@ async function httpRequest(
       headers: {
         "Content-Type": "application/json",
         ...(payload ? { "Content-Length": String(Buffer.byteLength(payload)) } : {}),
+        ...(token ? { "Authorization": `Bearer ${token}` } : {}),
       },
     };
     const req = http.request(opts, (res) => {
@@ -59,6 +73,9 @@ async function httpRequest(
         }
       });
     });
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error(`Sidecar request timed out after ${timeoutMs}ms: ${method} ${endpoint}`));
+    });
     req.on("error", reject);
     if (payload) req.write(payload);
     req.end();
@@ -69,7 +86,7 @@ async function waitReady(port: number, timeout: number): Promise<boolean> {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     try {
-      const res = (await httpRequest(port, "GET", "/health")) as { ok?: boolean };
+      const res = (await httpRequest(port, "GET", "/health", undefined, HEALTH_PROBE_TIMEOUT_MS)) as { ok?: boolean };
       if (res?.ok) return true;
     } catch {
       // not yet up
@@ -83,11 +100,13 @@ async function waitReady(port: number, timeout: number): Promise<boolean> {
 
 export class SidecarClient {
   private port: number;
+  private token: string;
   private proc?: ChildProcess;
   private _ready = false;
 
   constructor(private opts: SidecarClientOptions = {}) {
     this.port = opts.port ?? Number(process.env.OPENEYE_PORT ?? DEFAULT_PORT);
+    this.token = opts.sidecarToken ?? process.env.OPENEYE_SIDECAR_TOKEN ?? "";
   }
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
@@ -95,7 +114,7 @@ export class SidecarClient {
   async start(opts: SidecarClientOptions = {}): Promise<void> {
     // Re-use if already running
     try {
-      const res = (await httpRequest(this.port, "GET", "/health")) as { ok?: boolean };
+      const res = (await httpRequest(this.port, "GET", "/health", undefined, HEALTH_PROBE_TIMEOUT_MS)) as { ok?: boolean };
       if (res?.ok) {
         this._ready = true;
         this.log(`Attached to running sidecar on port ${this.port}`);
@@ -132,7 +151,11 @@ export class SidecarClient {
     ];
     this.log(`Spawning: ${python} ${uvArgs.join(" ")} (cwd: ${sidecarDir})`);
     this.proc = spawn(python, uvArgs, {
-      env: { ...process.env, OPENEYE_PORT: String(this.port) },
+      env: {
+        ...process.env,
+        OPENEYE_PORT: String(this.port),
+        ...(this.token ? { OPENEYE_SIDECAR_TOKEN: this.token } : {}),
+      },
       cwd: sidecarDir,
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -179,8 +202,9 @@ export class SidecarClient {
     body?: unknown
   ): Promise<T | null> {
     if (!this._ready) return null;
+    const timeout = this.opts.requestTimeout ?? DEFAULT_REQUEST_TIMEOUT_MS;
     try {
-      return (await httpRequest(this.port, method, endpoint, body)) as T;
+      return (await httpRequest(this.port, method, endpoint, body, timeout, this.token)) as T;
     } catch (err) {
       this.log(`Request failed ${method} ${endpoint}: ${err}`);
       return null;
