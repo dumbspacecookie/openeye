@@ -196,6 +196,25 @@ class TestReceiverContract(unittest.TestCase):
         r = self.client.get("/v1/openeye/trajectories/t-del", headers=self.auth_a)
         self.assertEqual(r.status_code, 404)
 
+    def test_soft_deleted_not_in_list(self):
+        # The single-fetch path was tested above; this asserts the list
+        # endpoint also respects deleted_at IS NULL so DSAR'd rows
+        # disappear from operator/tenant browsing too.
+        self.client.post("/v1/openeye", headers=self.auth_a,
+                         json=make_batch("b-list-del",
+                                         [make_trajectory("t-list-del-keep", proc="proc-keep"),
+                                          make_trajectory("t-list-del-drop", proc="proc-drop")]))
+
+        r = self.client.delete("/v1/openeye/trajectories/t-list-del-drop",
+                               headers=self.auth_a)
+        self.assertEqual(r.status_code, 200)
+
+        r = self.client.get("/v1/openeye/trajectories", headers=self.auth_a)
+        self.assertEqual(r.status_code, 200)
+        ids = [t["trajectory_id"] for t in r.json()["trajectories"]]
+        self.assertIn("t-list-del-keep", ids)
+        self.assertNotIn("t-list-del-drop", ids)
+
     def test_delete_unknown_returns_404(self):
         r = self.client.delete("/v1/openeye/trajectories/does-not-exist",
                                headers=self.auth_a)
