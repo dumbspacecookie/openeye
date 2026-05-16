@@ -19,7 +19,7 @@ import {
   setupProviders,
   makeStreamFn,
   ANTHROPIC_SONNET,
-} from "@openeye/pi-openeye";
+} from "@dumbspacecookie/openeye";
 
 import { describeFrameWithClaude } from "./claude-vision-adapter.js";
 import { describeFrameWithMoondream } from "./ollama-vision-adapter.js";

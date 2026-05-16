@@ -5,7 +5,7 @@
  * Import the model you want, set the matching env var, done.
  *
  * Quick start:
- *   import { ANTHROPIC_SONNET, makeStreamFn, setupProviders } from "@openeye/pi-openeye";
+ *   import { ANTHROPIC_SONNET, makeStreamFn, setupProviders } from "@dumbspacecookie/openeye";
  *   setupProviders();
  *   const agent = await OpenEyeAgent.create({ model: ANTHROPIC_SONNET, streamFn: makeStreamFn() });
  */

@@ -249,16 +249,16 @@ export { setupProviders, makeStreamFn };
 **Import patterns:**
 ```typescript
 // Main API
-import { OpenEyeAgent, setupProviders, makeStreamFn, ANTHROPIC_SONNET } from "@openeye/pi-openeye";
+import { OpenEyeAgent, setupProviders, makeStreamFn, ANTHROPIC_SONNET } from "@dumbspacecookie/openeye";
 
 // Memory compat layer
-import { Memory } from "@openeye/pi-openeye/memory";
+import { Memory } from "@dumbspacecookie/openeye/memory";
 
 // Model constants
-import { ANTHROPIC_OPUS, OPENAI_GPT41, GROQ_LLAMA33_70B } from "@openeye/pi-openeye";
+import { ANTHROPIC_OPUS, OPENAI_GPT41, GROQ_LLAMA33_70B } from "@dumbspacecookie/openeye";
 
 // Tools function
-import { createOpenEyeTools } from "@openeye/pi-openeye";
+import { createOpenEyeTools } from "@dumbspacecookie/openeye";
 ```
 
 ---

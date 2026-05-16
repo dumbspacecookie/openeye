@@ -1,6 +1,6 @@
 /**
  * mem0 / Zep compatibility layer for OpenEye.
- * Drop-in: import { Memory } from "@openeye/pi-openeye/memory"
+ * Drop-in: import { Memory } from "@dumbspacecookie/openeye/memory"
  */
 import { SidecarClient, type SidecarClientOptions } from "./sidecar-client.js";
 

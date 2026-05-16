@@ -1,5 +1,5 @@
 {
-  "name": "@openeye/pi-openeye",
+  "name": "@dumbspacecookie/openeye",
   "version": "0.1.0",
   "description": "Persistent memory, visual session tracking, and RL trajectory capture for AR/XR — the shared brain for every headset",
   "type": "module",

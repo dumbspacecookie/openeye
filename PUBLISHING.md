@@ -1,16 +1,14 @@
 # Publishing OpenEye to npm
 
-A checklist for the first publish of `@openeye/pi-openeye`. Once the
+A checklist for the first publish of `@dumbspacecookie/openeye`. Once the
 package is on the registry, future publishes can shrink to "bump version +
 `npm publish`."
 
 ## Pre-publish (one time)
 
-1. **Confirm scope ownership.** `@openeye` is an npm scope. You need to
-   own it or be added as a maintainer. Check at
-   `https://www.npmjs.com/settings/openeye/packages`. If you don't own
-   it, either claim it via npm support or pick a new scope (e.g.
-   `@getcontext/openeye`).
+1. **Scope ownership.** `@dumbspacecookie` is my personal npm scope —
+   every npm user gets one automatically with their username, so nothing
+   to claim. The scoped name guarantees no squat collisions.
 
 2. **Enable 2FA on the publishing npm account.** Hard requirement for
    security. `npm profile enable-2fa auth-and-writes`.
@@ -74,13 +72,13 @@ the upload happens. If any fail, the publish aborts.
 
 ```bash
 # Verify
-npm view @openeye/pi-openeye
+npm view @dumbspacecookie/openeye
 
 # Install from a fresh directory to smoke-test
 cd /tmp && mkdir openeye-smoke && cd openeye-smoke
 npm init -y
-npm install @openeye/pi-openeye
-node -e "import('@openeye/pi-openeye').then(m => console.log(Object.keys(m)))"
+npm install @dumbspacecookie/openeye
+node -e "import('@dumbspacecookie/openeye').then(m => console.log(Object.keys(m)))"
 ```
 
 Update the README's install instructions to use the npm path instead of
@@ -90,12 +88,12 @@ Update the README's install instructions to use the npm path instead of
 
 If you publish something broken, you have 72 hours to fully unpublish:
 ```bash
-npm unpublish @openeye/pi-openeye@<version>
+npm unpublish @dumbspacecookie/openeye@<version>
 ```
 
 After 72 hours npm only allows `deprecate`:
 ```bash
-npm deprecate @openeye/pi-openeye@<version> "Broken — use 0.1.2 instead"
+npm deprecate @dumbspacecookie/openeye@<version> "Broken — use 0.1.2 instead"
 ```
 
 ## Why dependencies are pinned with `~` instead of `^`

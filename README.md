@@ -30,14 +30,14 @@ then link or import from your project:
 
 ```bash
 npm link                # in the openeye/ directory
-npm link @openeye/pi-openeye   # in your project
+npm link @dumbspacecookie/openeye   # in your project
 ```
 
 or reference it locally:
 
 ```json
 "dependencies": {
-  "@openeye/pi-openeye": "file:../path/to/openeye"
+  "@dumbspacecookie/openeye": "file:../path/to/openeye"
 }
 ```
 
@@ -46,7 +46,7 @@ or reference it locally:
 ## quick start
 
 ```typescript
-import { OpenEyeAgent, setupProviders, makeStreamFn, ANTHROPIC_SONNET } from "@openeye/pi-openeye";
+import { OpenEyeAgent, setupProviders, makeStreamFn, ANTHROPIC_SONNET } from "@dumbspacecookie/openeye";
 import { describeFrameWithClaude } from "./examples/vision-adapter/claude-vision-adapter.js";
 import * as fs from "node:fs";
 
@@ -93,7 +93,7 @@ ollama pull llama3.3
 ```
 
 ```typescript
-import { ollamaModel } from "@openeye/pi-openeye";
+import { ollamaModel } from "@dumbspacecookie/openeye";
 const agent = await OpenEyeAgent.create({ model: ollamaModel("llama3.3"), streamFn: makeStreamFn() });
 ```
 

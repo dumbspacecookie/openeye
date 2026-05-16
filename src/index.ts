@@ -1,11 +1,11 @@
 /**
- * @openeye/pi-openeye
+ * @dumbspacecookie/openeye
  *
  * Persistent memory, visual session tracking, and RL trajectory capture
  * for the pi agent. Built for OpenEye AR/XR computer vision backend.
  *
  * Usage:
- *   import { OpenEyeAgent, setupProviders, ANTHROPIC_SONNET, makeStreamFn } from "@openeye/pi-openeye";
+ *   import { OpenEyeAgent, setupProviders, ANTHROPIC_SONNET, makeStreamFn } from "@dumbspacecookie/openeye";
  *
  *   setupProviders();
  *

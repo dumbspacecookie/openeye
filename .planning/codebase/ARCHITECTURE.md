@@ -20,7 +20,7 @@
 - Location: `src/index.ts`, `src/tools.ts`, `src/models.ts`
 - Contains: OpenEyeAgent class, tool definitions, model configurations for 10+ LLM providers
 - Depends on: `@mariozechner/pi-agent-core` (Agent runtime), `@mariozechner/pi-ai` (Model abstraction), sidecar HTTP API
-- Used by: Consumer applications importing `@openeye/pi-openeye` package
+- Used by: Consumer applications importing `@dumbspacecookie/openeye` package
 
 **Sidecar Client Layer (TypeScript):**
 - Purpose: Spawns Python subprocess, manages lifecycle, translates agent calls to HTTP requests
@@ -138,7 +138,7 @@
 
 **Application Entry (TypeScript):**
 - Location: `src/index.ts` (package main export)
-- Triggers: `import { OpenEyeAgent, ... } from "@openeye/pi-openeye"`
+- Triggers: `import { OpenEyeAgent, ... } from "@dumbspacecookie/openeye"`
 - Responsibilities: Export OpenEyeAgent class, model constants, tool creator, Memory class, makeStreamFn() helper
 
 **Sidecar Entry (Python):**

@@ -125,7 +125,7 @@
 **Barrel Files:**
 - `src/index.ts` re-exports all public API from other modules
 - Re-exports organized by category: Anthropic models, OpenAI models, Google models, etc.
-- Usage: `import { OpenEyeAgent, setupProviders, ANTHROPIC_SONNET } from "@openeye/pi-openeye"`
+- Usage: `import { OpenEyeAgent, setupProviders, ANTHROPIC_SONNET } from "@dumbspacecookie/openeye"`
 
 **Class Design:**
 - Private constructor with static factory method: `private constructor()` with `static async create()`
