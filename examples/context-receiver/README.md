@@ -3,7 +3,7 @@
 This is the starting point for Context's backend team to implement the
 ingest endpoint OpenEye expects. It is **wire-compatible** with the
 contract in [`../../docs/context-data.md`](../../docs/context-data.md)
-and ships with 19 conformance tests.
+and ships with 23 conformance tests.
 
 ## What this is
 
@@ -61,7 +61,7 @@ python -m pytest test_receiver.py -v
 ```
 
 These tests are the **acceptance criteria** for any production
-implementation. If a new backend passes all 19 tests, the OpenEye sidecar
+implementation. If a new backend passes all 23 tests, the OpenEye sidecar
 will work against it unchanged.
 
 ## End-to-end smoke test against OpenEye
@@ -123,10 +123,13 @@ curl http://localhost:8080/v1/openeye/trajectories \
   -H "Authorization: Bearer ctx-test-key"
 ```
 
-You should see your trajectory with `tenant_id="dev-tenant"`, the
-procedure_tag, the reward signal, and the conversation — **without** any
-tenant_id, user_id, system_prompt, or visual_session_id from the OpenEye
-side. That's the PII boundary working.
+You should see your trajectory with `tenant_id="dev-tenant"` (derived
+from your auth token, not the request body), the procedure_tag, the
+reward signal, and the conversation. Notably absent: user_id,
+system_prompt, and visual_session_id. The sidecar's `_clean_for_context`
+allow-list only ships a fixed set of fields, so internal identifiers
+never make it into the outgoing payload — there is nothing to "strip"
+because nothing was added. That's the PII boundary working.
 
 ## API surface
 
