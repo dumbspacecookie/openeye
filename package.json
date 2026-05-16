@@ -28,7 +28,7 @@
     "clean": "rimraf dist",
     "test": "vitest --run",
     "typecheck": "tsc --noEmit",
-    "prepack": "npm run typecheck && npm run build",
+    "prepack": "npm run typecheck && npm run build && rimraf sidecar/__pycache__ tests/__pycache__",
     "prepublishOnly": "npm run typecheck && npm run test && npm run build"
   },
   "publishConfig": {
