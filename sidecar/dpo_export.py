@@ -109,15 +109,20 @@ def build_dpo_pairs(
 
     pairs = []
     for procedure, trajs in by_procedure.items():
-        # Find best chosen (highest reward above threshold)
-        chosen_candidates = [t for t in trajs if (t.get("reward_signal") or 0) >= chosen_threshold]
-        rejected_candidates = [t for t in trajs if (t.get("reward_signal") or 1) <= rejected_threshold]
+        # Find best chosen (highest reward above threshold).
+        # Use explicit None check — `or` treats 0.0 as falsy.
+        chosen_candidates = [t for t in trajs
+                             if t.get("reward_signal") is not None
+                             and t["reward_signal"] >= chosen_threshold]
+        rejected_candidates = [t for t in trajs
+                               if t.get("reward_signal") is not None
+                               and t["reward_signal"] <= rejected_threshold]
 
         if not chosen_candidates or not rejected_candidates:
             continue
 
-        best_chosen = max(chosen_candidates, key=lambda t: t.get("reward_signal") or 0)
-        worst_rejected = min(rejected_candidates, key=lambda t: t.get("reward_signal") or 0)
+        best_chosen = max(chosen_candidates, key=lambda t: t["reward_signal"])
+        worst_rejected = min(rejected_candidates, key=lambda t: t["reward_signal"])
 
         chosen_trl = sharegpt_to_trl(best_chosen.get("conversations", []))
         rejected_trl = sharegpt_to_trl(worst_rejected.get("conversations", []))
