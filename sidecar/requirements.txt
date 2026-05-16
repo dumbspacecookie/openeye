@@ -5,6 +5,10 @@
 fastapi>=0.110.0
 uvicorn[standard]>=0.27.0
 
+# Test dependencies (FastAPI TestClient requires httpx)
+httpx>=0.27.0
+pytest>=8.0.0
+
 # Optional: swap keyword scoring in skills.py for real embeddings
 # sentence-transformers>=2.2.0
 # numpy>=1.24.0
