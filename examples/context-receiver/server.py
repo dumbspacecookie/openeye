@@ -315,8 +315,14 @@ async def ingest(
         raise HTTPException(400, "X-OpenEye-Batch-Id header does not match body batch_id")
     batch_id = x_openeye_batch_id or batch.batch_id
 
+    # Validate body schema_version and (if present) the X-OpenEye-Schema header.
+    # Both must match SUPPORTED_SCHEMA — otherwise a future sidecar version
+    # whose body claims "1.0" but whose header advertises "2.0" would be
+    # silently accepted, masking a real client/server contract mismatch.
     if batch.schema_version != SUPPORTED_SCHEMA:
         raise HTTPException(400, f"Unsupported schema {batch.schema_version}; expected {SUPPORTED_SCHEMA}")
+    if x_openeye_schema and x_openeye_schema != SUPPORTED_SCHEMA:
+        raise HTTPException(400, f"Unsupported X-OpenEye-Schema {x_openeye_schema}; expected {SUPPORTED_SCHEMA}")
 
     store = get_store()
 

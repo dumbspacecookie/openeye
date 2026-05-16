@@ -134,6 +134,16 @@ class TestReceiverContract(unittest.TestCase):
         r = self.client.post("/v1/openeye", headers=self.auth_a, json=batch)
         self.assertEqual(r.status_code, 400)
 
+    def test_schema_header_mismatch_rejected(self):
+        # Body schema matches, but the X-OpenEye-Schema header advertises
+        # a different version — must reject. Catches a future-sidecar
+        # contract drift where the header gets bumped before the body.
+        r = self.client.post(
+            "/v1/openeye",
+            headers={**self.auth_a, "X-OpenEye-Schema": "2.0"},
+            json=make_batch("b-hdrschema", [make_trajectory("t-hs")]))
+        self.assertEqual(r.status_code, 400)
+
     def test_malformed_body_returns_422(self):
         r = self.client.post("/v1/openeye", headers=self.auth_a,
                              json={"wrong": "shape"})
