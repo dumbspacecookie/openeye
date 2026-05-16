@@ -1,0 +1,89 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python (3.${{ matrix.python-minor }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-minor: ["10", "11", "12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.${{ matrix.python-minor }}"
+          cache: pip
+
+      - name: Install sidecar deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r sidecar/requirements.txt
+
+      - name: Run main test suite
+        run: python -m pytest tests/ -v
+
+      - name: Run Context receiver tests
+        working-directory: examples/context-receiver
+        run: |
+          pip install -r requirements.txt
+          python -m pytest test_receiver.py -v
+
+      - name: Sanity-check fine-tune scripts
+        working-directory: examples/fine-tune
+        run: |
+          echo '{"prompt":"x","chosen":"y","rejected":"z","procedure_tag":"t","chosen_reward":0.9,"rejected_reward":0.1}' > /tmp/test.jsonl
+          python train_dpo.py --data /tmp/test.jsonl --dry-run
+
+  typescript:
+    name: TypeScript
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  dashboard-html-valid:
+    name: Dashboard HTML
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate dashboard HTML parses
+        run: |
+          python3 -c "
+          import html.parser, sys
+          class V(html.parser.HTMLParser):
+              errors = []
+              def error(self, msg): self.errors.append(msg)
+          p = V()
+          p.feed(open('examples/ops-dashboard/index.html').read())
+          if p.errors:
+              print('\\n'.join(p.errors))
+              sys.exit(1)
+          print('ok')
+          "

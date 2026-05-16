@@ -1,0 +1,13 @@
+# Training dependencies. Install on a GPU box.
+# CPU-only smoke tests work with --dry-run and don't need any of this.
+
+transformers>=4.45.0
+trl>=0.11.0
+peft>=0.13.0          # for QLoRA path
+accelerate>=0.34.0
+datasets>=3.0.0
+torch>=2.4.0
+bitsandbytes>=0.44.0  # 4-bit quantization for QLoRA
+
+# Optional but recommended for inference:
+# vllm>=0.6.0         # serve the trained checkpoint via OpenAI-compatible API

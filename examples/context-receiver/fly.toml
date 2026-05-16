@@ -1,0 +1,55 @@
+# Fly.io configuration for the Context reference receiver.
+# Customize `app` and the region before launching.
+#
+# Quickstart:
+#   1. install flyctl: https://fly.io/docs/hands-on/install-flyctl/
+#   2. fly launch --copy-config --name context-receiver-yourname
+#   3. fly volumes create receiver_data --size 1
+#   4. fly secrets set CONTEXT_RECEIVER_TOKENS="ctx-prod-key:tenant-a"
+#   5. fly deploy
+
+app = "context-receiver"
+primary_region = "iad"   # Ashburn — closest to most US/EU traffic
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  CONTEXT_RECEIVER_LOG_LEVEL = "INFO"
+
+[[services]]
+  protocol = "tcp"
+  internal_port = 8080
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1   # at least one warm for ingest latency
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+    force_https = true
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+
+  [services.concurrency]
+    type = "requests"
+    hard_limit = 200
+    soft_limit = 100
+
+  [[services.http_checks]]
+    interval = "10s"
+    grace_period = "5s"
+    method = "get"
+    path = "/health"
+    protocol = "http"
+    timeout = "2s"
+
+[[mounts]]
+  source = "receiver_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

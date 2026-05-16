@@ -1,0 +1,45 @@
+# Source files (we ship compiled dist/)
+src/
+
+# Test files
+tests/
+**/*.test.ts
+**/*.test.js
+vitest.config.ts
+
+# Tooling
+tsconfig.json
+.gitignore
+.npmignore
+
+# Examples — published separately as docs/examples in the repo
+examples/
+
+# Documentation source
+docs/
+CONTRIBUTING.md
+DEPLOY.md
+
+# Eval and CI artifacts
+eval/
+fly.toml
+Dockerfile
+.github/
+
+# Local artifacts
+node_modules/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.log
+.openeye/
+
+# Python bytecode
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# OS clutter
+.DS_Store
+Thumbs.db

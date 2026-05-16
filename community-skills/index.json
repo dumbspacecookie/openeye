@@ -1,0 +1,52 @@
+{
+  "schema_version": "1.0",
+  "description": "Index of community-contributed OpenEye skills. Each entry points to a skill markdown in this directory. To install: python community-skills/install.py <skill-name>",
+  "skills": [
+    {
+      "name": "bolt-assembly-m6",
+      "path": "manufacturing/bolt-assembly-m6.md",
+      "domain": "manufacturing",
+      "description": "M6 bolt installation: bracket positioning, insertion, hand-tighten, torque to 12 Nm.",
+      "tags": ["assembly", "torque", "fastening"],
+      "maintainer": "dumbspacecookie",
+      "version": "1.0.0"
+    },
+    {
+      "name": "equipment-pre-op-check",
+      "path": "manufacturing/equipment-pre-op-check.md",
+      "domain": "manufacturing",
+      "description": "Pre-operation safety + readiness check for industrial equipment.",
+      "tags": ["safety", "manufacturing"],
+      "maintainer": "dumbspacecookie",
+      "version": "1.0.0"
+    },
+    {
+      "name": "visual-qc",
+      "path": "manufacturing/visual-qc.md",
+      "domain": "manufacturing",
+      "description": "Visual quality control for line-station inspection.",
+      "tags": ["qa", "inspection"],
+      "maintainer": "dumbspacecookie",
+      "version": "1.0.0"
+    },
+    {
+      "name": "lockout-tagout",
+      "path": "field-service/lockout-tagout.md",
+      "domain": "field-service",
+      "description": "Electrical isolation procedure: disconnect, lock, tag, verify zero energy.",
+      "tags": ["safety", "electrical", "compliance"],
+      "maintainer": "dumbspacecookie",
+      "version": "1.0.0"
+    },
+    {
+      "name": "hand-hygiene",
+      "path": "medical/hand-hygiene.md",
+      "domain": "medical",
+      "description": "Hand-washing protocol — illustrative example, not a validated clinical protocol.",
+      "tags": ["hygiene", "compliance"],
+      "maintainer": "dumbspacecookie",
+      "version": "1.0.0",
+      "advisory": "Illustrative only. Not a validated clinical protocol — review independently before any clinical or compliance use."
+    }
+  ]
+}

@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>OpenEye Ops</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --muted: #7d8590;
+    --accent: #58a6ff;
+    --ok: #3fb950;
+    --warn: #d29922;
+    --err: #f85149;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; background: var(--bg); color: var(--text);
+         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", monospace, sans-serif;
+         font-size: 14px; line-height: 1.5; }
+  h1 { margin: 0 0 8px; font-size: 22px; font-weight: 600; }
+  h2 { margin: 0 0 12px; font-size: 14px; font-weight: 600; text-transform: uppercase;
+       letter-spacing: 0.05em; color: var(--muted); }
+  .topbar { display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 20px; }
+  .topbar small { color: var(--muted); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+          gap: 16px; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+           padding: 16px; }
+  .panel.full { grid-column: 1 / -1; }
+  .row { display: flex; justify-content: space-between; padding: 6px 0;
+         border-bottom: 1px solid var(--border); }
+  .row:last-child { border-bottom: none; }
+  .label { color: var(--muted); }
+  .value { font-family: ui-monospace, "Cascadia Code", Menlo, monospace; }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 10px;
+          font-size: 12px; font-weight: 600; }
+  .pill.ok { background: rgba(63, 185, 80, 0.15); color: var(--ok); }
+  .pill.warn { background: rgba(210, 153, 34, 0.15); color: var(--warn); }
+  .pill.err { background: rgba(248, 81, 73, 0.15); color: var(--err); }
+  .pill.muted { background: rgba(125, 133, 144, 0.15); color: var(--muted); }
+  button { background: transparent; color: var(--accent); border: 1px solid var(--accent);
+           border-radius: 4px; padding: 4px 10px; font-size: 12px; cursor: pointer;
+           font-family: inherit; }
+  button:hover { background: rgba(88, 166, 255, 0.1); }
+  button.danger { color: var(--err); border-color: var(--err); }
+  button.danger:hover { background: rgba(248, 81, 73, 0.1); }
+  input[type="text"] { background: var(--bg); color: var(--text); border: 1px solid var(--border);
+                       border-radius: 4px; padding: 4px 8px; font-family: inherit; font-size: 13px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase;
+       letter-spacing: 0.05em; }
+  td.right, th.right { text-align: right; }
+  .blocker { background: rgba(248, 81, 73, 0.08); border-left: 3px solid var(--err);
+             padding: 10px 12px; border-radius: 0 4px 4px 0; margin-bottom: 10px;
+             color: var(--text); font-size: 13px; }
+  .empty { color: var(--muted); font-style: italic; padding: 8px 0; }
+  .toolbar { display: flex; gap: 8px; align-items: center; }
+  details summary { cursor: pointer; color: var(--accent); user-select: none; }
+  details[open] summary { margin-bottom: 8px; }
+  code { background: var(--bg); padding: 2px 6px; border-radius: 3px; font-size: 12px; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div>
+    <h1>OpenEye Ops</h1>
+    <small id="endpoint-label">connecting…</small>
+  </div>
+  <div class="toolbar">
+    <input type="text" id="base-url" placeholder="http://127.0.0.1:7770" size="28" />
+    <input type="text" id="token" placeholder="sidecar token (optional)" size="22" />
+    <button onclick="saveAndRefresh()">connect</button>
+    <button onclick="refresh()">↻ refresh</button>
+  </div>
+</div>
+
+<div class="grid">
+
+  <div class="panel">
+    <h2>Sidecar</h2>
+    <div class="row"><span class="label">Status</span><span class="value" id="health-status">…</span></div>
+    <div class="row"><span class="label">Database</span><span class="value" id="health-db">…</span></div>
+  </div>
+
+  <div class="panel">
+    <h2>Context Sharing</h2>
+    <div id="context-blocker"></div>
+    <div class="row"><span class="label">Enabled</span><span class="value" id="ctx-enabled">…</span></div>
+    <div class="row"><span class="label">Endpoint</span><span class="value" id="ctx-endpoint">…</span></div>
+    <div class="row"><span class="label">Consent</span><span class="value" id="ctx-consent">…</span></div>
+    <div class="row"><span class="label">API key</span><span class="value" id="ctx-key">…</span></div>
+    <div class="row"><span class="label">Last error</span><span class="value" id="ctx-last-err">none</span></div>
+    <div class="row"><span class="label">Consecutive failures</span><span class="value" id="ctx-fail-count">0</span></div>
+    <div style="margin-top:8px"><button onclick="syncNow()">sync now</button></div>
+  </div>
+
+  <div class="panel full">
+    <h2>Tenant Opt-In Roster</h2>
+    <table>
+      <thead>
+        <tr><th>Tenant ID</th><th>Opted In</th><th>Last Updated</th><th>Note</th><th></th></tr>
+      </thead>
+      <tbody id="tenants-body"></tbody>
+    </table>
+    <div class="toolbar" style="margin-top:12px">
+      <input type="text" id="new-tenant" placeholder="new tenant id" />
+      <input type="text" id="new-tenant-note" placeholder="note (e.g. signed DPA 2026-05-15)" size="40" />
+      <button onclick="addTenant(true)">opt in</button>
+      <button class="danger" onclick="addTenant(false)">opt out</button>
+    </div>
+  </div>
+
+  <div class="panel full">
+    <h2>Recent Sessions <small style="color:var(--muted)">(up to 20)</small></h2>
+    <table>
+      <thead>
+        <tr><th>Session ID</th><th>Source</th><th>Tenant</th><th>Model</th><th class="right">Msgs</th><th class="right">Tools</th><th>Started</th></tr>
+      </thead>
+      <tbody id="sessions-body"></tbody>
+    </table>
+  </div>
+
+  <div class="panel full">
+    <h2>Danger Zone</h2>
+    <details>
+      <summary>Revoke consent attestation</summary>
+      <p>Removes the file at <code id="consent-marker-path">~/.openeye/.context-consent</code>.
+      Context sync halts on next pass until you re-attest via <code>POST /context/consent</code>.</p>
+      <button class="danger" onclick="revokeConsent()">revoke consent</button>
+    </details>
+    <details style="margin-top:10px">
+      <summary>Forget a trajectory's Context sync marker</summary>
+      <p>Makes a trajectory eligible to be re-sent. Use after Context confirms deletion.</p>
+      <div class="toolbar">
+        <input type="text" id="forget-id" placeholder="trajectory uuid" size="40" />
+        <button class="danger" onclick="forgetTrajectory()">forget</button>
+      </div>
+    </details>
+  </div>
+
+</div>
+
+<script>
+const LS_KEY = "openeye-ops-config";
+
+function loadConfig() {
+  try {
+    const cfg = JSON.parse(localStorage.getItem(LS_KEY) || "{}");
+    document.getElementById("base-url").value = cfg.baseUrl || "http://127.0.0.1:7770";
+    document.getElementById("token").value = cfg.token || "";
+  } catch (_) { /* ignore */ }
+}
+
+function saveAndRefresh() {
+  const baseUrl = document.getElementById("base-url").value.trim() || "http://127.0.0.1:7770";
+  const token = document.getElementById("token").value.trim();
+  localStorage.setItem(LS_KEY, JSON.stringify({ baseUrl, token }));
+  refresh();
+}
+
+function baseUrl() {
+  return document.getElementById("base-url").value.trim().replace(/\/$/, "") || "http://127.0.0.1:7770";
+}
+
+async function api(method, path, body) {
+  const headers = { "Content-Type": "application/json" };
+  const token = document.getElementById("token").value.trim();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  try {
+    const r = await fetch(baseUrl() + path, {
+      method, headers, body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!r.ok) return { _error: r.status, _body: await r.text().catch(() => "") };
+    return await r.json();
+  } catch (e) {
+    return { _error: "network", _msg: String(e) };
+  }
+}
+
+function pill(text, cls) { return `<span class="pill ${cls}">${text}</span>`; }
+function tsToString(ts) {
+  if (!ts) return "—";
+  const d = new Date(typeof ts === "number" ? ts * 1000 : ts);
+  return d.toLocaleString();
+}
+function escapeHtml(s) {
+  if (s == null) return "";
+  return String(s).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[c]));
+}
+
+async function refresh() {
+  document.getElementById("endpoint-label").textContent = `connecting to ${baseUrl()}…`;
+  await Promise.all([
+    refreshHealth(),
+    refreshContext(),
+    refreshTenants(),
+    refreshSessions(),
+  ]);
+}
+
+async function refreshHealth() {
+  const h = await api("GET", "/health");
+  const statusEl = document.getElementById("health-status");
+  const dbEl = document.getElementById("health-db");
+  if (h._error) {
+    statusEl.innerHTML = pill(`error: ${h._error}`, "err");
+    dbEl.textContent = "—";
+    document.getElementById("endpoint-label").textContent = `cannot reach ${baseUrl()}`;
+    return;
+  }
+  statusEl.innerHTML = pill("ok", "ok");
+  dbEl.textContent = h.db || "—";
+  document.getElementById("endpoint-label").textContent = `connected to ${baseUrl()}`;
+}
+
+async function refreshContext() {
+  const s = await api("GET", "/context/status");
+  const blockerEl = document.getElementById("context-blocker");
+  blockerEl.innerHTML = "";
+  if (s._error) {
+    blockerEl.innerHTML = `<div class="blocker">Failed to read /context/status: ${s._error}</div>`;
+    return;
+  }
+  document.getElementById("ctx-enabled").innerHTML = s.enabled ? pill("on", "ok") : pill("off", "muted");
+  document.getElementById("ctx-endpoint").textContent = s.endpoint || "—";
+  document.getElementById("ctx-consent").innerHTML = s.consent_attested ? pill("attested", "ok") : pill("not attested", "warn");
+  document.getElementById("ctx-key").innerHTML = s.api_key_set ? pill("set", "ok") : pill("missing", "warn");
+  document.getElementById("consent-marker-path").textContent = s.consent_marker_path || "—";
+
+  const failState = s.failure_state || {};
+  document.getElementById("ctx-last-err").innerHTML = failState.last_error
+    ? `<span style="color:var(--err)">${escapeHtml(failState.last_error)}</span>`
+    : "none";
+  document.getElementById("ctx-fail-count").textContent = failState.consecutive_failures ?? 0;
+
+  if (s.blocker) {
+    blockerEl.innerHTML = `<div class="blocker">${escapeHtml(s.blocker)}</div>`;
+  }
+}
+
+async function refreshTenants() {
+  const r = await api("GET", "/context/tenants");
+  const body = document.getElementById("tenants-body");
+  if (r._error) {
+    body.innerHTML = `<tr><td colspan="5" class="empty">error loading tenants (${r._error})</td></tr>`;
+    return;
+  }
+  const tenants = r.tenants || [];
+  if (tenants.length === 0) {
+    body.innerHTML = `<tr><td colspan="5" class="empty">No tenants configured. Add one below — default deny until you do.</td></tr>`;
+    return;
+  }
+  body.innerHTML = tenants.map((t) => `
+    <tr>
+      <td><code>${escapeHtml(t.tenant_id)}</code></td>
+      <td>${t.opted_in ? pill("opted in", "ok") : pill("opted out", "muted")}</td>
+      <td>${escapeHtml(tsToString(t.updated_at))}</td>
+      <td>${escapeHtml(t.note || "")}</td>
+      <td class="right">
+        <button onclick="toggleTenant('${escapeHtml(t.tenant_id)}', ${!t.opted_in})">
+          ${t.opted_in ? "opt out" : "opt in"}
+        </button>
+      </td>
+    </tr>
+  `).join("");
+}
+
+async function refreshSessions() {
+  const r = await api("GET", "/sessions?limit=20");
+  const body = document.getElementById("sessions-body");
+  if (r._error) {
+    body.innerHTML = `<tr><td colspan="7" class="empty">error loading sessions (${r._error})</td></tr>`;
+    return;
+  }
+  const sessions = r.sessions || [];
+  if (sessions.length === 0) {
+    body.innerHTML = `<tr><td colspan="7" class="empty">No sessions yet.</td></tr>`;
+    return;
+  }
+  body.innerHTML = sessions.map((s) => `
+    <tr>
+      <td><code title="${escapeHtml(s.id)}">${escapeHtml(s.id.slice(0, 8))}…</code></td>
+      <td>${escapeHtml(s.source || "")}</td>
+      <td>${escapeHtml(s.tenant_id || "—")}</td>
+      <td>${escapeHtml(s.model || "—")}</td>
+      <td class="right">${s.message_count ?? 0}</td>
+      <td class="right">${s.tool_call_count ?? 0}</td>
+      <td>${escapeHtml(tsToString(s.started_at))}</td>
+    </tr>
+  `).join("");
+}
+
+async function toggleTenant(tenantId, optIn) {
+  const r = await api("POST", "/context/tenants/optin",
+                      { tenant_id: tenantId, opted_in: optIn });
+  if (r._error) {
+    alert(`Failed: ${r._error} ${r._body || r._msg || ""}`);
+    return;
+  }
+  refreshTenants();
+}
+
+async function addTenant(optIn) {
+  const tenantId = document.getElementById("new-tenant").value.trim();
+  const note = document.getElementById("new-tenant-note").value.trim();
+  if (!tenantId) {
+    alert("Enter a tenant ID");
+    return;
+  }
+  const r = await api("POST", "/context/tenants/optin",
+                      { tenant_id: tenantId, opted_in: optIn, note: note || null });
+  if (r._error) {
+    alert(`Failed: ${r._error} ${r._body || r._msg || ""}`);
+    return;
+  }
+  document.getElementById("new-tenant").value = "";
+  document.getElementById("new-tenant-note").value = "";
+  refreshTenants();
+}
+
+async function syncNow() {
+  const r = await api("POST", "/context/sync-now");
+  if (r._error) {
+    alert(`Sync failed: ${r._error} ${r._body || r._msg || ""}`);
+    return;
+  }
+  const detail = `sent=${r.sent ?? 0} skipped_no_optin=${r.skipped_no_tenant_optin ?? 0} skipped_hygiene=${r.skipped_hygiene ?? 0} enabled=${r.enabled}`;
+  alert(`Sync triggered. ${detail}`);
+  refreshContext();
+}
+
+async function revokeConsent() {
+  if (!confirm("Revoke consent attestation? Context sync will halt on the next pass.")) return;
+  const r = await api("POST", "/context/consent", { confirm: false });
+  if (r._error) {
+    alert(`Failed: ${r._error}`);
+    return;
+  }
+  refreshContext();
+}
+
+async function forgetTrajectory() {
+  const id = document.getElementById("forget-id").value.trim();
+  if (!id) return;
+  if (!confirm(`Forget Context-sync marker for ${id}?`)) return;
+  const r = await api("POST", `/context/forget/${encodeURIComponent(id)}`);
+  if (r._error) {
+    alert(`Failed: ${r._error}`);
+    return;
+  }
+  alert("Marker forgotten. Trajectory eligible for re-send on next sync.");
+  document.getElementById("forget-id").value = "";
+}
+
+loadConfig();
+refresh();
+setInterval(refresh, 10000);  // poll every 10s
+</script>
+
+</body>
+</html>

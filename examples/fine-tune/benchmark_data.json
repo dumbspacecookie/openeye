@@ -1,0 +1,186 @@
+{
+  "version": "0.1",
+  "description": "OpenEye procedure-verification benchmark. 20 scene descriptions across 5 procedures, each with the correct verify_step verdict (pass/fail/uncertain).",
+  "examples": [
+    {
+      "id": "bolt-assembly-01",
+      "procedure_tag": "bolt-assembly",
+      "step_id": "s2-insert-bolt",
+      "step_name": "Insert M6 bolt through bracket hole into frame",
+      "scene_description": "Operator's right hand holds an M6 bolt vertically above the bracket. The bracket is positioned over the frame's mounting hole. The bolt has not yet entered the hole.",
+      "expected_verdict": "uncertain",
+      "rationale": "Step is in progress but not yet completed — bolt not inserted."
+    },
+    {
+      "id": "bolt-assembly-02",
+      "procedure_tag": "bolt-assembly",
+      "step_id": "s2-insert-bolt",
+      "step_name": "Insert M6 bolt through bracket hole into frame",
+      "scene_description": "Operator's right hand has released an M6 bolt. The bolt is fully inserted through the bracket hole into the frame, with threads engaged and the head flush against the bracket surface.",
+      "expected_verdict": "pass",
+      "rationale": "Bolt visibly inserted and seated correctly."
+    },
+    {
+      "id": "bolt-assembly-03",
+      "procedure_tag": "bolt-assembly",
+      "step_id": "s2-insert-bolt",
+      "step_name": "Insert M6 bolt through bracket hole into frame",
+      "scene_description": "Operator is inserting a bolt into the wrong hole — the secondary alignment hole, not the structural mounting hole. The mounting hole remains empty.",
+      "expected_verdict": "fail",
+      "rationale": "Wrong hole — clear procedure deviation."
+    },
+    {
+      "id": "bolt-assembly-04",
+      "procedure_tag": "bolt-assembly",
+      "step_id": "s4-torque",
+      "step_name": "Torque to 12 Nm with calibrated wrench",
+      "scene_description": "Operator uses an uncalibrated open-end wrench on the bolt. The calibrated torque wrench sits unused on the workbench.",
+      "expected_verdict": "fail",
+      "rationale": "Wrong tool — uncalibrated wrench cannot satisfy torque-spec step."
+    },
+    {
+      "id": "hand-hygiene-01",
+      "procedure_tag": "hand-hygiene",
+      "step_id": "hh-wet",
+      "step_name": "Wet hands with running water",
+      "scene_description": "Both hands are visible under running water from a tap. Hands are wet from wrists to fingertips.",
+      "expected_verdict": "pass",
+      "rationale": "Both hands wet, water running — step complete."
+    },
+    {
+      "id": "hand-hygiene-02",
+      "procedure_tag": "hand-hygiene",
+      "step_id": "hh-soap",
+      "step_name": "Apply antimicrobial soap",
+      "scene_description": "Operator pumps soap dispenser once; visible foam on right palm only. Left hand remains bare.",
+      "expected_verdict": "uncertain",
+      "rationale": "Partial application — left hand may receive soap in next motion or may be skipped."
+    },
+    {
+      "id": "hand-hygiene-03",
+      "procedure_tag": "hand-hygiene",
+      "step_id": "hh-scrub",
+      "step_name": "Scrub hands for at least 20 seconds covering all surfaces",
+      "scene_description": "Operator briefly rubs palms together once and immediately reaches for towel. Total contact time under 2 seconds. Backs of hands and fingernails not addressed.",
+      "expected_verdict": "fail",
+      "rationale": "Duration and coverage clearly insufficient."
+    },
+    {
+      "id": "hand-hygiene-04",
+      "procedure_tag": "hand-hygiene",
+      "step_id": "hh-rinse",
+      "step_name": "Rinse hands thoroughly under running water",
+      "scene_description": "Both hands held under running water for several seconds. Soap rinses visibly down the drain. Hands appear free of foam at end of frame.",
+      "expected_verdict": "pass",
+      "rationale": "Thorough rinse confirmed by visible soap removal."
+    },
+    {
+      "id": "lockout-tagout-01",
+      "procedure_tag": "lockout-tagout",
+      "step_id": "lo-isolate",
+      "step_name": "Operate the disconnect to the OFF position",
+      "scene_description": "Technician's hand rotates the disconnect handle from ON to OFF. Handle is now in the down position. Indicator light on the panel goes dark.",
+      "expected_verdict": "pass",
+      "rationale": "Disconnect operated correctly; indicator light confirms isolation."
+    },
+    {
+      "id": "lockout-tagout-02",
+      "procedure_tag": "lockout-tagout",
+      "step_id": "lo-lock",
+      "step_name": "Apply a personal lockout device to the disconnect",
+      "scene_description": "Disconnect is in OFF position but no lock or tag is attached. Technician is reaching toward energized equipment.",
+      "expected_verdict": "fail",
+      "rationale": "Disconnect off but not locked — technician at risk of re-energization."
+    },
+    {
+      "id": "lockout-tagout-03",
+      "procedure_tag": "lockout-tagout",
+      "step_id": "lo-tag",
+      "step_name": "Apply a danger tag identifying the authorized worker",
+      "scene_description": "Padlock visible on disconnect lever. A tag hangs from the lock body, but the tag is blank — no worker name, no date.",
+      "expected_verdict": "uncertain",
+      "rationale": "Tag present but illegible/unfilled — may be filled out post-frame or may indicate omission."
+    },
+    {
+      "id": "lockout-tagout-04",
+      "procedure_tag": "lockout-tagout",
+      "step_id": "lo-verify",
+      "step_name": "Verify zero energy by attempting to start equipment",
+      "scene_description": "Technician presses the start button on the equipment. Equipment does not start. Voltage tester reads 0V on conductors.",
+      "expected_verdict": "pass",
+      "rationale": "Two-method verification: start attempt fails and meter confirms 0V."
+    },
+    {
+      "id": "ppe-check-01",
+      "procedure_tag": "ppe-check",
+      "step_id": "ppe-eyewear",
+      "step_name": "Wear ANSI Z87.1 safety glasses",
+      "scene_description": "Operator is wearing safety glasses with visible side shields. Lenses are clear and aligned with eyes.",
+      "expected_verdict": "pass",
+      "rationale": "Safety glasses with side shields present and worn correctly."
+    },
+    {
+      "id": "ppe-check-02",
+      "procedure_tag": "ppe-check",
+      "step_id": "ppe-gloves",
+      "step_name": "Wear cut-resistant gloves rated A4 or higher",
+      "scene_description": "Operator wears nitrile disposable gloves. No cut-rating markings visible.",
+      "expected_verdict": "fail",
+      "rationale": "Wrong glove type — nitrile disposables provide no cut resistance."
+    },
+    {
+      "id": "ppe-check-03",
+      "procedure_tag": "ppe-check",
+      "step_id": "ppe-footwear",
+      "step_name": "Wear steel-toe boots or equivalent",
+      "scene_description": "Operator wears closed-toe leather boots. Toe construction is not visible from this camera angle.",
+      "expected_verdict": "uncertain",
+      "rationale": "Footwear may meet spec but cannot be confirmed without reinforcement marking visible."
+    },
+    {
+      "id": "ppe-check-04",
+      "procedure_tag": "ppe-check",
+      "step_id": "ppe-hearing",
+      "step_name": "Wear hearing protection rated NRR 25+",
+      "scene_description": "Operator wears foam earplugs with cords. Both ears visibly plugged. Operator nods affirmatively at supervisor.",
+      "expected_verdict": "pass",
+      "rationale": "Hearing protection visibly in place in both ears."
+    },
+    {
+      "id": "qa-inspection-01",
+      "procedure_tag": "qa-inspection",
+      "step_id": "qa-visual",
+      "step_name": "Visually inspect weld for porosity, undercut, and crater cracks",
+      "scene_description": "Inspector holds magnifier over completed weld bead. Weld surface appears uniform with no visible cracks, holes, or undercut. Inspector marks paper checklist.",
+      "expected_verdict": "pass",
+      "rationale": "Inspection performed methodically; no defects called out."
+    },
+    {
+      "id": "qa-inspection-02",
+      "procedure_tag": "qa-inspection",
+      "step_id": "qa-visual",
+      "step_name": "Visually inspect weld for porosity, undercut, and crater cracks",
+      "scene_description": "Multiple pinhole-sized voids visible along the weld bead. Inspector glances briefly then marks the part as accepted.",
+      "expected_verdict": "fail",
+      "rationale": "Visible porosity not addressed — defect missed or ignored."
+    },
+    {
+      "id": "qa-inspection-03",
+      "procedure_tag": "qa-inspection",
+      "step_id": "qa-measure",
+      "step_name": "Measure critical dimension with calibrated caliper",
+      "scene_description": "Caliper jaws contact the part at two points. Display reads 25.04 mm. Spec is 25.0 ± 0.05 mm.",
+      "expected_verdict": "pass",
+      "rationale": "Measurement 25.04 mm is within tolerance band 24.95–25.05 mm."
+    },
+    {
+      "id": "qa-inspection-04",
+      "procedure_tag": "qa-inspection",
+      "step_id": "qa-measure",
+      "step_name": "Measure critical dimension with calibrated caliper",
+      "scene_description": "Caliper jaws contact the part. Display reads 25.12 mm. Spec is 25.0 ± 0.05 mm. Inspector writes 25.0 on the form.",
+      "expected_verdict": "fail",
+      "rationale": "Measurement out of tolerance and operator falsified result."
+    }
+  ]
+}
