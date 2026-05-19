@@ -1,6 +1,7 @@
 {
   "name": "@dumbspacecookie/openeye",
   "version": "0.1.0",
+  "mcpName": "io.github.dumbspacecookie/openeye",
   "description": "Persistent memory, visual session tracking, and RL trajectory capture for AR/XR — the shared brain for every headset",
   "type": "module",
   "main": "./dist/index.js",

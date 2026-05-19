@@ -1,0 +1,49 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "name": "io.github.dumbspacecookie/openeye",
+  "description": "Persistent memory + visual session tracking + RL trajectory capture for AR/XR/mobile procedure verification. FTS5 search across past agent sessions and frame descriptions. Bring your own vision model.",
+  "version": "0.1.0",
+  "repository": {
+    "url": "https://github.com/dumbspacecookie/openeye",
+    "source": "github"
+  },
+  "websiteUrl": "https://github.com/dumbspacecookie/openeye",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@dumbspacecookie/openeye",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "runtimeHint": "python3",
+      "runtimeArguments": [
+        {
+          "type": "positional",
+          "value": "sidecar/mcp_server.py"
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "ANTHROPIC_API_KEY",
+          "description": "Anthropic API key for the agent. Required because the default OpenEye agent uses Claude. Swap providers via src/models.ts if you want OPENAI/GROQ/GEMINI/etc.",
+          "isRequired": true,
+          "isSecret": true
+        },
+        {
+          "name": "OPENEYE_CONTEXT_OPTIN",
+          "description": "Set true to opt in to sharing trajectory data with Context's training pipeline. Default off. Loud opt-in by design — read docs/context-data.md before flipping.",
+          "isRequired": false,
+          "isSecret": false,
+          "default": "false"
+        },
+        {
+          "name": "OPENEYE_CONTEXT_API_KEY",
+          "description": "Context API key. Only needed if OPENEYE_CONTEXT_OPTIN is true.",
+          "isRequired": false,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}
