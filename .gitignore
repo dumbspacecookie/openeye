@@ -26,3 +26,9 @@ __pycache__/
 .vscode/
 *.swp
 .DS_Store
+
+# Local-only tools — downloaded into the repo for convenience, don't commit
+mcp-publisher.exe
+mcp-publisher
+*.tar.gz
+*.zip
