@@ -1,6 +1,6 @@
 # Context Data Sharing
 
-OpenEye is built by [Context](https://getcontext.info). To make procedure-
+OpenEye is built by [Context](https://www.contextindustries.io/). To make procedure-
 verification models better over time, OpenEye **can** ship opted-in training
 data to Context. **It does not by default.** This document describes exactly
 what happens when you turn it on, what we collect, what we don't, and how to
