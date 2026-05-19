@@ -1,0 +1,101 @@
+{
+  "$schema": "https://modelcontextprotocol.io/schemas/server-card.json",
+  "schemaVersion": "2024-11-05",
+  "name": "openeye",
+  "displayName": "OpenEye",
+  "description": "Persistent memory + visual session tracking + RL trajectory capture for AR/XR/mobile procedure verification. FTS5 search across past agent sessions and frame descriptions. Bring your own vision model.",
+  "version": "0.1.0",
+  "homepage": "https://github.com/dumbspacecookie/openeye",
+  "repository": "https://github.com/dumbspacecookie/openeye",
+  "license": "MIT",
+  "author": {
+    "name": "dumbspacecookie",
+    "url": "https://github.com/dumbspacecookie"
+  },
+  "categories": [
+    "memory",
+    "computer-vision",
+    "ar-xr",
+    "procedure-verification",
+    "agent-trajectories"
+  ],
+  "keywords": [
+    "ar", "xr", "augmented-reality", "computer-vision", "agent",
+    "memory", "fts5", "procedure-verification", "dpo", "trl",
+    "claude", "ollama", "mcp"
+  ],
+  "runtime": {
+    "type": "python",
+    "version": ">=3.10"
+  },
+  "deployment": {
+    "stdio": {
+      "command": "python3",
+      "args": ["sidecar/mcp_server.py"],
+      "env": {
+        "ANTHROPIC_API_KEY": "${anthropicApiKey}",
+        "OPENEYE_CONTEXT_OPTIN": "${openeyeContextOptin}",
+        "OPENEYE_CONTEXT_API_KEY": "${openeyeContextApiKey}"
+      }
+    }
+  },
+  "configSchema": {
+    "type": "object",
+    "required": ["anthropicApiKey"],
+    "properties": {
+      "anthropicApiKey": {
+        "type": "string",
+        "description": "Anthropic API key for the agent. Required because the default OpenEye agent uses Claude. Swap providers via src/models.ts if you want a different one."
+      },
+      "openeyeContextOptin": {
+        "type": "boolean",
+        "default": false,
+        "description": "Opt in to share trajectory data with Context's training pipeline. Default off. Loud opt-in by design — read docs/context-data.md before flipping this."
+      },
+      "openeyeContextApiKey": {
+        "type": "string",
+        "description": "Context API key. Only needed if openeyeContextOptin is true."
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "search_memory",
+      "description": "FTS5 search across all past agent sessions for this tenant. Use to recall what the agent observed in previous procedure runs."
+    },
+    {
+      "name": "search_frames",
+      "description": "FTS5 search across all past frame scene descriptions. Use to find similar visual situations from prior sessions."
+    },
+    {
+      "name": "recall_skill",
+      "description": "Retrieve relevant procedural skill documents for the current task. Ranked by keyword or embeddings via OPENEYE_SKILL_RANKER."
+    },
+    {
+      "name": "write_skill",
+      "description": "Persist a new skill document after completing a complex task. Future sessions will recall this via recall_skill."
+    },
+    {
+      "name": "start_visual_session",
+      "description": "Begin a tracked AR/XR session. Returns a visual_session_id used to scope subsequent log_frame / verify_step calls."
+    },
+    {
+      "name": "end_visual_session",
+      "description": "Close a visual session with a status. Triggers reward computation if step verifications were recorded."
+    },
+    {
+      "name": "log_frame",
+      "description": "Record a frame's natural-language scene description for the current visual session. Indexed for search_frames."
+    },
+    {
+      "name": "verify_step",
+      "description": "Record a step verification result: pass, fail, or uncertain. Drives the trajectory reward signal: (passes + 0.5 * uncertain) / total."
+    }
+  ],
+  "documentation": {
+    "readme": "https://github.com/dumbspacecookie/openeye/blob/master/README.md",
+    "tutorial": "https://github.com/dumbspacecookie/openeye/blob/master/docs/tutorials/bolt-assembly-in-50-lines.md",
+    "security": "https://github.com/dumbspacecookie/openeye/blob/master/docs/security.md",
+    "dataSharing": "https://github.com/dumbspacecookie/openeye/blob/master/docs/context-data.md"
+  }
+}
