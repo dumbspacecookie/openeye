@@ -1,8 +1,8 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
   "name": "io.github.dumbspacecookie/openeye",
-  "description": "Persistent memory + visual session tracking + RL trajectory capture for AR/XR/mobile procedure verification. FTS5 search across past agent sessions and frame descriptions. Bring your own vision model.",
-  "version": "0.1.0",
+  "description": "Procedure verification for AR/XR with memory, visual sessions, and DPO trajectory export.",
+  "version": "0.1.1",
   "repository": {
     "url": "https://github.com/dumbspacecookie/openeye",
     "source": "github"
@@ -12,7 +12,7 @@
     {
       "registryType": "npm",
       "identifier": "@dumbspacecookie/openeye",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "transport": {
         "type": "stdio"
       },
