@@ -1,0 +1,40 @@
+# Smithery auto-detect config.
+# When users install OpenEye via smithery.ai or `npx @smithery/cli install`,
+# this file tells the installer how to run the MCP server and what env vars
+# the user needs to configure.
+
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    required:
+      - anthropicApiKey
+    properties:
+      anthropicApiKey:
+        type: string
+        description: >-
+          Anthropic API key for the agent. Required because the default
+          OpenEye agent uses Claude. Swap in OPENAI_API_KEY / GROQ_API_KEY
+          / GOOGLE_API_KEY etc. if you want a different provider — see
+          src/models.ts.
+      openeyeContextOptin:
+        type: boolean
+        default: false
+        description: >-
+          Set true to opt in to sharing trajectory data with Context's
+          training pipeline. Default off. Loud opt-in by design — see
+          docs/context-data.md before flipping this.
+      openeyeContextApiKey:
+        type: string
+        description: >-
+          Context API key. Only needed if openeyeContextOptin is true.
+  commandFunction: |
+    (config) => ({
+      command: "python3",
+      args: ["sidecar/mcp_server.py"],
+      env: {
+        ANTHROPIC_API_KEY: config.anthropicApiKey,
+        OPENEYE_CONTEXT_OPTIN: config.openeyeContextOptin ? "true" : "false",
+        OPENEYE_CONTEXT_API_KEY: config.openeyeContextApiKey || ""
+      }
+    })

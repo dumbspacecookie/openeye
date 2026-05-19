@@ -1,7 +1,12 @@
 # OpenEye
 
-> **alpha software.** the package is not on npm yet — install from source
-> (see below). interfaces may change. file issues at
+[![npm version](https://img.shields.io/npm/v/@dumbspacecookie/openeye?color=blue)](https://www.npmjs.com/package/@dumbspacecookie/openeye)
+[![npm downloads](https://img.shields.io/npm/dm/@dumbspacecookie/openeye)](https://www.npmjs.com/package/@dumbspacecookie/openeye)
+[![license](https://img.shields.io/npm/l/@dumbspacecookie/openeye)](./LICENSE)
+[![CI](https://github.com/dumbspacecookie/openeye/actions/workflows/test.yml/badge.svg)](https://github.com/dumbspacecookie/openeye/actions/workflows/test.yml)
+[![github stars](https://img.shields.io/github/stars/dumbspacecookie/openeye?style=social)](https://github.com/dumbspacecookie/openeye)
+
+> **alpha software.** interfaces may change. file issues at
 > github.com/dumbspacecookie/openeye.
 
 every AR headset maker — HoloLens, Snap Spectacles, Apple, Android — ships a device that can see. none of them ship a brain. every developer building on these platforms has to figure out the intelligence layer themselves, from scratch, every time, for every device. the work doesn't compound. what one team learns on HoloLens doesn't help the team building on WebXR. every deployment is a silo.
@@ -16,29 +21,20 @@ OpenEye doesn't ship a vision model — **you bring your own**. drop in Claude v
 
 ## install
 
-OpenEye isn't on npm yet. install directly from the repo:
+```bash
+npm install @dumbspacecookie/openeye
+pip install -r node_modules/@dumbspacecookie/openeye/sidecar/requirements.txt
+```
+
+the Python sidecar (FastAPI + SQLite) handles state and auto-spawns when
+you create an agent — you don't have to start it yourself.
+
+prefer to hack on it locally? clone instead:
 
 ```bash
 git clone https://github.com/dumbspacecookie/openeye.git
-cd openeye
-npm install
-npm run build
+cd openeye && npm install && npm run build
 pip install -r sidecar/requirements.txt
-```
-
-then link or import from your project:
-
-```bash
-npm link                # in the openeye/ directory
-npm link @dumbspacecookie/openeye   # in your project
-```
-
-or reference it locally:
-
-```json
-"dependencies": {
-  "@dumbspacecookie/openeye": "file:../path/to/openeye"
-}
 ```
 
 ---
